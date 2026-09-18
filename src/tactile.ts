@@ -15,7 +15,7 @@ export class TactileRenderer {
     };
     this.worker.onerror=()=>{if(!this.disposed)this.failed();this.dispose();};
   }
-  private async send(kind:string,video:HTMLVideoElement,gain=1,cleanup=true):Promise<Reply>{
+  private async send(kind:string,video:ImageBitmapSource,gain=1,cleanup=true):Promise<Reply>{
     const bitmap=await createImageBitmap(video);
     if(this.disposed){bitmap.close();throw new Error('disposed');}
     return new Promise((resolve,reject)=>{
@@ -23,7 +23,8 @@ export class TactileRenderer {
       this.calls.set(id,{resolve,reject,timer});this.worker.postMessage({id,kind,bitmap,gain,cleanup},[bitmap]);
     });
   }
-  async reference(video:HTMLVideoElement){const size=await this.send('reference',video);this.initialized=true;return size;}
+  async reference(source:ImageBitmapSource){const size=await this.send('reference',source);this.initialized=true;return size;}
+  async render(source:ImageBitmapSource,gain:number,cleanup:boolean){return (await this.send('frame',source,gain,cleanup)).image;}
   update(video:HTMLVideoElement,gain:number,cleanup=true){
     if(this.disposed||!this.initialized)return;
     if(video!==this.video){

@@ -67,9 +67,10 @@ try {
     await delay(400);await screenshot('recording-en-1366');
     await evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].filter(c=>c.checked).forEach(c=>c.click())");await delay(100);
     await evaluate(`{
-      window.__nativePixels=v=>{const c=document.createElement('canvas');c.width=v.videoWidth||v.width;c.height=v.videoHeight||v.height;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);return ctx.getImageData(0,0,c.width,c.height).data;};
+      ${await readFile(join(root,'vendor/tactile-filter.js'),'utf8')};window.__Filter=TactileFilter;
+ window.__nativePixels=v=>{const c=document.createElement('canvas');c.width=v.videoWidth||v.width;c.height=v.videoHeight||v.height;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);return ctx.getImageData(0,0,c.width,c.height).data;};
       window.__nativeReferences=[...document.querySelectorAll('.tactile-card video')].map(window.__nativePixels);
-      window.__nativeDifferenceErrors=()=>[...document.querySelectorAll('.tactile-card')].map((card,index)=>{const actual=window.__nativePixels(card.querySelector('.difference-cell canvas')),current=window.__nativePixels(card.querySelector('video')),reference=window.__nativeReferences[index],gain=Number(card.querySelector('input[type=range]').value);let different=0,max=0;for(let i=0;i<actual.length;i+=4)for(let c=0;c<3;c++){const expected=255-Math.min(255,Math.abs(current[i+c]-reference[i+c])*gain);const delta=Math.abs(actual[i+c]-expected);if(delta){different++;max=Math.max(max,delta);}}return {id:card.dataset.channel,different,max};});
+      window.__nativeDifferenceErrors=()=>[...document.querySelectorAll('.tactile-card')].map((card,index)=>{const actual=window.__nativePixels(card.querySelector('.difference-cell canvas')),current=window.__nativePixels(card.querySelector('video')),reference=window.__nativeReferences[index],gain=Number(card.querySelector('input[type=range]').value);const surface=card.querySelector('.difference-cell canvas'),expected=new Uint8ClampedArray(actual.length);new window.__Filter(surface.width,surface.height,reference).render(current,expected,gain,!card.querySelector('input[type=checkbox]').checked);let different=0,max=0;for(let i=0;i<actual.length;i+=4)for(let c=0;c<3;c++){const delta=Math.abs(actual[i+c]-expected[i+c]);if(delta){different++;max=Math.max(max,delta);}}return {id:card.dataset.channel,different,max};});
     }`);
     report.checks.push('Real package folder loaded; cameras and tactile references decoded');
     await click('.play-button');await delay(2400);await click('.play-button');
@@ -83,9 +84,9 @@ try {
     const {mediaTimeAt}=await import('../src/math.ts');
     for(const item of report.seek){assert.equal(item.error,null);const channel=ep.media.find(m=>m.id===item.id);const delta=Math.abs(item.time-mediaTimeAt(data.timings[item.id],seekMs));assert.ok(delta<=1/channel.fps+.002,`Seek drift ${item.id}: ${delta}`);}
     report.checks.push('Synchronized play/pause and seek within one frame');
-    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile pixel formula at default 8x');
+    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile response at default 8x');
     await evaluate("{const g=document.querySelector('.tactile-card input[type=range]');g.value=1;g.dispatchEvent(new Event('input',{bubbles:true}));}");await delay(250);
-    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile pixel formula at 1x');
+    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile response at 1x');
     report.checks.push('Native worker tactile rendering preserves exact reference differences at 1x and 8x gain');
     await screenshot('seek-en-1366');
     const hash=()=>evaluate("[...document.querySelectorAll('.difference-cell canvas')].map(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s=0;for(let i=0;i<d.length;i++)s=(s+d[i]*(i%97+1))%1000000007;return s})");

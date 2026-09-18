@@ -40,13 +40,16 @@ const viewport=async(width,height)=>{await cdp('Emulation.setDeviceMetricsOverri
 const click=async selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
 const source=process.env.RDV_ARCHIVE || '/home/tianyu/Downloads/task-e7244f5d-part-01-of-01';
 const seconds=Number(process.env.RDV_SECONDS||24);
+const capping=process.env.RDV_TASK==='capping',folding=process.env.RDV_TASK==='folding';
+const label=process.env.RDV_LABEL||'chrome';
 try{
  const browser=(await cdp('Browser.getVersion',{},true)).product;
  const target=await cdp('Target.createTarget',{url:'about:blank'},true);session=(await cdp('Target.attachToTarget',{targetId:target.targetId,flatten:true},true)).sessionId;
  await cdp('Page.enable');await cdp('Runtime.enable');await cdp('Network.enable');await cdp('Network.setBlockedURLs',{urls:['http://*','https://*','ws://*','wss://*']});
- await viewport(1920,1080);await cdp('Page.navigate',{url:pathToFileURL(join(root,'dist/viewer.html')).href});await wait("!!document.querySelector('.open-main')");
+ await viewport(1920,1080);await cdp('Page.navigate',{url:pathToFileURL(join(root,'dist/viewer.html')).href+(process.env.RDV_SOFTWARE?'?software=1':'')});await wait("!!document.querySelector('.open-main')");
  const doc=await cdp('DOM.getDocument');const node=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:(await stat(source)).isDirectory()?'input[webkitdirectory]':'input[accept]'});await cdp('DOM.setFileInputFiles',{nodeId:node.nodeId,files:[source]});
- await wait("document.querySelectorAll('.media-card').length===7 && !document.querySelector('.media-message')",45000);
+ await wait("document.querySelectorAll('.media-card').length>=6 && !document.querySelector('.media-message')",45000);
+ assert.ok(await evaluate("[...document.querySelectorAll('.tactile-source')].every(c=>getComputedStyle(c).display==='none')"));
  await evaluate(`{
  window.__live=[];window.__paints={};const draw=CanvasRenderingContext2D.prototype.drawImage;
  CanvasRenderingContext2D.prototype.drawImage=function(...args){const result=draw.apply(this,args);if(this.canvas.closest?.('.difference-cell')){const id=this.canvas.closest('.media-card').dataset.channel;window.__paints[id]=(window.__paints[id]||0)+1;}return result;};
@@ -55,9 +58,9 @@ try{
  }`);
  for(let i=0;i<seconds;i++){await delay(1000);if((i+1)%5===0)console.log(JSON.stringify(await evaluate('window.__live.at(-1)')));}
  const samples=await evaluate('clearInterval(window.__timer);window.__live');
- const contacts=samples.filter(s=>s.timeline>=9500&&s.timeline<=11000||s.timeline>=19500&&s.timeline<=21000);
- const report={browser,source,errors,requests,wallMs:samples.at(-1).at-samples[0].at,advancedMs:samples.at(-1).timeline-samples[0].timeline,busySamples:samples.filter(s=>s.busy).length,last:samples.at(-1),contact:Object.fromEntries(['l_tact_l','l_tact_r'].map(id=>[id,{samples:contacts.length,visible:contacts.filter(s=>s.channels.find(c=>c.id===id).changed>50).length}]))};
- await writeFile(join(output,'chrome.json'),JSON.stringify(report,null,2));await writeFile(join(output,'chrome-raw.json'),JSON.stringify(samples));await screenshot('chrome-live');
+ const contacts=samples.filter(s=>folding ? s.timeline>=18300&&s.timeline<=20500 : capping ? s.timeline>=18300&&s.timeline<=19100 : s.timeline>=9500&&s.timeline<=11000||s.timeline>=19500&&s.timeline<=21000);
+ const report={browser,source,errors,requests,wallMs:samples.at(-1).at-samples[0].at,advancedMs:samples.at(-1).timeline-samples[0].timeline,busySamples:samples.filter(s=>s.busy).length,last:samples.at(-1),contact:Object.fromEntries((folding?['r_tact_l','r_tact_r']:capping?['l_tact_r']:['l_tact_l','l_tact_r']).map(id=>[id,{samples:contacts.length,visible:contacts.filter(s=>s.channels.find(c=>c.id===id).changed>50).length}]))};
+ await writeFile(join(output,label+'.json'),JSON.stringify(report,null,2));await writeFile(join(output,label+'-raw.json'),JSON.stringify(samples));await screenshot(label+'-live');
  assert.ok(contacts.length>0);assert.ok(Object.values(report.contact).every(c=>c.visible>=c.samples*.7),JSON.stringify(report.contact));
  assert.ok(!samples.some(s=>s.busy&&s.at>samples[0].at+1000));assert.ok(report.advancedMs>=report.wallMs*.98);
  assert.ok(samples.at(-1).channels.every(c=>c.paints>20));assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);

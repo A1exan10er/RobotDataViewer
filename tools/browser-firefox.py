@@ -12,6 +12,7 @@ import urllib.request
 parser = argparse.ArgumentParser()
 parser.add_argument('--viewer', default=str(Path(__file__).resolve().parents[1] / 'dist' / 'viewer.html'))
 parser.add_argument('--source', default='/home/tianyu/Downloads/task-e7244f5d-part-01-of-01.tar')
+parser.add_argument('--task', choices=['sorting','capping'], default='sorting')
 parser.add_argument('--seconds', type=int, default=45)
 parser.add_argument('--label', default='baseline-tar')
 parser.add_argument('--software', action='store_true')
@@ -89,19 +90,19 @@ try:
         evaluate("{const input=document.querySelector('input[webkitdirectory]'),paths="+json.dumps(paths)+";if(input.files.length!==paths.length)throw new Error('Incomplete folder selection');[...input.files].forEach((f,i)=>{if(f.name!==paths[i].split('/').at(-1))throw new Error('File order differs');Object.defineProperty(f,'webkitRelativePath',{value:paths[i]});});input.dispatchEvent(new Event('change',{bubbles:true}));}")
     else:
         command('/element/' + element + '/value', {'text': args.source})
-    wait("document.querySelectorAll('.media-card').length===7 && !document.querySelector('.media-message')", 90)
+    wait("document.querySelectorAll('.media-card').length>=6 && !document.querySelector('.media-message')", 90)
     alignment=evaluate("return document.querySelector('.alignment-status').textContent")
     if args.expect_capture_timing:
         assert alignment == 'Timestamp alignment', alignment
     print('Opened', args.source, evaluate("return [...document.querySelectorAll('.media-card')].map(c=>c.dataset.mode)"), flush=True)
     if args.tactile_clean_check:
-        assert evaluate("return [...document.querySelectorAll('.tactile-card input[type=checkbox]')].every(c=>c.checked)")
+        assert evaluate("return [...document.querySelectorAll('.tactile-card input[type=checkbox]')].every(c=>!c.checked)")
         filter_code=(Path(__file__).resolve().parents[1]/'vendor'/'tactile-filter.js').read_text()
         evaluate("{"+filter_code+";window.__Filter=TactileFilter;}")
         evaluate("""
           window.__pixels=source=>{const c=document.createElement('canvas');c.width=source.videoWidth||source.width;c.height=source.videoHeight||source.height;c.getContext('2d').drawImage(source,0,0);return c.getContext('2d').getImageData(0,0,c.width,c.height).data;};
           window.__filters=[...document.querySelectorAll('.tactile-card')].map(c=>{const v=c.querySelector('video');return new window.__Filter(v.videoWidth,v.videoHeight,window.__pixels(v));});
-          window.__check=()=>[...document.querySelectorAll('.tactile-card')].map((c,k)=>{const current=window.__pixels(c.querySelector('video')),actual=window.__pixels(c.querySelector('.difference-cell canvas')),expected=new Uint8ClampedArray(actual.length);window.__filters[k].render(current,expected,Number(c.querySelector('input[type=range]').value),c.querySelector('input[type=checkbox]').checked);let changed=0,dark=0,errors=0;for(let i=0;i<actual.length;i+=4){if(Math.min(actual[i],actual[i+1],actual[i+2])<255)changed++;if(Math.min(actual[i],actual[i+1],actual[i+2])<175)dark++;for(let j=0;j<4;j++)if(actual[i+j]!==expected[i+j])errors++;}return {id:c.dataset.channel,changed,dark,errors};});
+          window.__check=()=>[...document.querySelectorAll('.tactile-card')].map((c,k)=>{const current=window.__pixels(c.querySelector('video')),actual=window.__pixels(c.querySelector('.difference-cell canvas')),expected=new Uint8ClampedArray(actual.length);window.__filters[k].render(current,expected,Number(c.querySelector('input[type=range]').value),!c.querySelector('input[type=checkbox]').checked);let changed=0,dark=0,errors=0;for(let i=0;i<actual.length;i+=4){if(Math.min(actual[i],actual[i+1],actual[i+2])<255)changed++;if(Math.min(actual[i],actual[i+1],actual[i+2])<175)dark++;for(let j=0;j<4;j++)if(actual[i+j]!==expected[i+j])errors++;}return {id:c.dataset.channel,changed,dark,errors};});
         """)
         def seek_cleanup(ms):
             evaluate("{const t=document.querySelector('.timeline');t.value="+str(ms)+";t.dispatchEvent(new Event('input',{bubbles:true}));}")
@@ -110,10 +111,13 @@ try:
         seek_cleanup(2000)
         clean=evaluate("return window.__check()")
         assert all(c['changed']==0 for c in clean), clean
-        seek_cleanup(10000)
+        seek_cleanup(18800 if args.task=='capping' else 10000)
         contact=evaluate("return window.__check()")
-        assert all(c['dark']>100 for c in contact if c['id'].startswith('l_')), contact
-        evaluate("document.querySelector('.tactile-card .icon-button').click()")
+        assert all(c['dark']>100 for c in contact if (c['id']=='l_tact_r' if args.task=='capping' else c['id'].startswith('l_'))), contact
+        if args.task=='capping':
+            assert all(c['changed']==0 for c in contact if c['id'].startswith('r_')),contact
+        evaluate("document.querySelector('[data-channel=l_tact_r] .icon-button').click()")
+        assert evaluate("return getComputedStyle(document.querySelector('.expanded-panel .tactile-source')).display==='none'")
         (out / (args.label + '-contact.png')).write_bytes(base64.b64decode(command('/screenshot', method='GET')))
         evaluate("document.querySelector('.expanded-close').click()")
         evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].forEach(c=>c.click())")
@@ -124,6 +128,17 @@ try:
         evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].forEach(c=>c.click())")
         wait("window.__check().every(c=>c.errors===0)",10)
         assert all(c['changed']==0 for c in evaluate("return window.__check()"))
+        seek_cleanup(18800 if args.task=='capping' else 10000)
+        first=evaluate("return Array.from(window.__pixels(document.querySelector('[data-channel=l_tact_r] .difference-cell canvas')))")
+        for gain in (1,16,8):
+            evaluate("{const g=document.querySelector('[data-channel=l_tact_r] input[type=range]');g.value="+str(gain)+";g.dispatchEvent(new Event('input',{bubbles:true}));}")
+            wait("window.__check().every(c=>c.errors===0)")
+        for name in ('Next frame','Previous frame'):
+            evaluate("document.querySelector('[aria-label=\""+name+"\"]').click()")
+            wait("window.__check().every(c=>c.errors===0)")
+        seek_cleanup(20000)
+        seek_cleanup(18800 if args.task=='capping' else 10000)
+        assert evaluate("return Array.from(window.__pixels(document.querySelector('[data-channel=l_tact_r] .difference-cell canvas')))")==first
         seek_cleanup(0)
         (out / (args.label + '-cleanup.json')).write_text(json.dumps({'clean':clean,'contact':contact,'unfiltered':unfiltered},indent=2))
         print('Native tactile cleanup, unfiltered parity and fixed reference checks passed', flush=True)

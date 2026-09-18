@@ -1,4 +1,42 @@
-# Validation — direct recordings and smooth playback
+# Validation
+
+## Tactile response (1.1.6)
+
+Validated locally on 2026-09-18. The v1.1.5 source/tag and release artifacts are preserved.
+
+The UI now shows one full-width white/amber/red **Tactile response / 触觉响应** map per sensor, with its recorded aspect ratio and orientation, a Weak–Strong legend, default 8× gain, and an optional Show all changes switch. Normal and expanded views hide the original image while retaining decoding. The filter combines 3×3 and 9×9 spatial evidence, robust median/MAD background estimates, connected-region area and accumulated excess change. It no longer requires a strong core. The first-frame reference stays fixed.
+
+### Reported capping frame and sample phases
+
+At episode `0070_20260917-114140_likun_umi_none`, 18.8 seconds, the left-hand right sensor shows 13,716 response pixels in Chrome software decoding and 14,579 in Firefox native decoding. Both untouched right-hand sensors remain exactly white. The left-hand left sensor has no sufficiently separable response at that frame; no response is fabricated from the visible grasp. Small differences in decoder RGB conversion can change mask boundaries.
+
+Wrist-camera contact sheets were reviewed for approach, grasp, sustained hold and release context. A repeatable read-only sample regression checks 49 sensor frames across capping 0070, folding 0055 and sorting 0066: 34 expected clean frames are exactly white and 15 frames with measurable contact have more than 500 response pixels. Cases include capping approach at 2 s, weak contact at 18.8 s, hold at 60 s and release at 115.3 s; folding grasp at 10 s, right-hand hold at 18.8/20 s and release at 25/150.2 s; sorting approach at 2/5 s, left-hand grasp/hold at 10/18.8/20 s and release at 25 s. Returning to each identical decoded frame after another render produces byte-identical output.
+
+These checks do not establish a perfect physical contact classifier. Some visibly held objects have no separable tactile-image signal in particular sensors or frames. Lighting changes or residual sensor deformation can also produce coherent image response. White means no detected image response; colors are not pressure. Diagnostics never feed RGB or gripper values into the tactile filter.
+
+Evidence: `artifacts/response-1.1.6/response-samples/results.json`; Chrome `tactile-browser/results.json` and `contact.png`; Firefox `firefox/response-controls-cleanup.json`. No recordings or diagnostic images are included in the customer ZIP.
+
+### Playback and controls
+
+All runs used isolated profiles with the standalone local HTML file. Chrome 152.0.7977.64 used the bundled software decoder for these HEVC samples; Firefox 154.0.1 used native decoding, with an additional forced-software folding check. Source tactile images had `display:none` throughout. Native updates use the media clock independently of video compositor callbacks.
+
+- Chrome: 24-second uninterrupted checks passed for all three supplied TAR tasks. Sorting contact was visible in 14/14 samples on both left sensors; capping weak contact in 4/4 samples; folding hold in 11/11 samples on both right sensors. Each map painted about 706–711 times. Each run had one startup busy sample and no further buffering, no page exceptions, and no outbound page requests.
+- Firefox native: sorting folder and capping TAR checks passed with zero busy samples and no runtime errors. Sorting contact was visible in 14/14 samples per left sensor, capping in 4/4 weak-contact samples. Tactile maps painted 523–563 times over approximately 24 seconds.
+- Firefox delayed render: a 160 ms delay on tactile worker replies still showed contact in 14/14 samples on both left sensors, with 122–124 map paints, zero busy samples and no runtime errors. The previous white-during-playback failure did not recur.
+- Firefox software fallback: folding passed with 11/11 visible hold samples on each right sensor, 705–708 paints, zero busy samples and no runtime errors.
+- Chrome software and Firefox native controls passed: pause, next/previous frame, repeated seeks, expansion, gain 1×/8×/16×, Show all changes, and return to white. Response pixels exactly matched the shared filter on each browser's decoded frames. Settings redraws for software frames also run in a coalesced worker; a synchronous compatibility path remains for browsers lacking offscreen bitmap support.
+
+Evidence under `artifacts/response-1.1.6/`: `live-tactile/chrome-{sorting,capping,folding}.json`, `firefox/response-{native,capping,delayed,folding-software}-live.json`, and the controls reports above. Reports include wall-clock advance, paint counts, live canvas samples and exceptions. These measurements are specific to this computer and the supplied recordings.
+
+### Automated checks and local package
+
+`npm run build`, `npm test` (33 JavaScript cases across five files), and `npm run test:python` (8 cases) passed. Filter regressions cover weak coherent patches without a strong center, isolated bright noise, broad contact, background drift, gain changes, release, held contact, repeated seeks, odd dimensions and portrait orientation. Existing playback regressions continue to cover delayed renders, stale seeks/settings, pause and disposal.
+
+Reproduce sample checks with `python tools/check-tactile-samples.py /path/to/extracted-task-folders` in a Python environment with OpenCV/numpy. Fixtures remain in ignored `artifacts/response-samples` and are processed by the actual TypeScript filter. Browser checks accept `RDV_TASK=capping|folding` or Firefox `--task capping|folding`; the default is sorting. Set `RDV_ARCHIVE` or `--source` to the original task TAR/folder. Firefox sandboxed installations need a viewer/profile path visible to Firefox.
+
+The local portable ZIP includes the standalone viewer, updated EN/ZH guides and source/license material. It requires no data conversion or schema change. ZIP integrity, embedded viewer equality, version labels and absence of sample recordings are checked before handoff.
+
+## Earlier validation history
 
 Validated locally on 2026-09-18 (viewer 1.1.5) with the standalone `file://` viewer in isolated Chrome 152.0.7977.64 on Linux. Browser HTTP/HTTPS/WebSocket requests were blocked. Recordings were read directly from their existing locations.
 

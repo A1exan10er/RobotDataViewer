@@ -689,9 +689,11 @@ small {
   font-weight:450;
   pointer-events:none
 }
-.difference-cell {
-  border-left:1px solid #2b3542
-}
+.difference-cell { background:#fff }
+/* Decoded source pixels remain available to both playback paths, outside layout. */
+.tactile-source { display:none }
+.response-legend { display:flex; align-items:center; gap:6px; color:#a1b3c6 }
+.response-legend i { display:block; width:58px; height:5px; border-radius:3px; background:linear-gradient(90deg,#ffd219,#dc2314) }
 .media-message {
   position:absolute;
   inset:0;
@@ -792,7 +794,7 @@ small {
 }
 .tactile-card .media-images {
   height:auto;
-  aspect-ratio:8/3;
+  aspect-ratio:var(--response-aspect,16/9);
   flex:none
 }
 .tactile-card .panel-heading {
@@ -1235,7 +1237,7 @@ small {
     gap:15px
   }
   .tactile-card .media-images {
-    aspect-ratio:8/3
+    aspect-ratio:var(--response-aspect,16/9)
   }
   .tactile-explainer {
     font-size:10px!important

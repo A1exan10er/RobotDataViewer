@@ -1,4 +1,4 @@
-/** Display-only spatial cleanup, always relative to the same recorded reference. */
+/** Relative image response, not pressure. No temporal state or contact inference. */
 export class TactileFilter {
   private readonly width: number;
   private readonly height: number;
@@ -12,7 +12,9 @@ export class TactileFilter {
   private readonly mask: Float32Array;
   private readonly visited: Uint8Array;
   private readonly queue: Int32Array;
-  private readonly histogram = new Uint32Array(1021);
+  private readonly histogram = new Uint32Array(4081);
+  private readonly palette = new Uint8ClampedArray(4097 * 3);
+  private paletteGain = -1;
   private readonly x0: Int32Array;
   private readonly x1: Int32Array;
   private readonly blendX: Float32Array;
@@ -38,9 +40,22 @@ export class TactileFilter {
   render(current: Uint8ClampedArray, output: Uint8ClampedArray, gain = 8, cleanup = true): void {
     const reference = this.reference;
     if (current.length !== reference.length || output.length !== reference.length) throw new Error('Frame dimensions differ');
+    gain = Number.isFinite(gain) ? Math.max(1, Math.min(16, gain)) : 8;
+    if (gain !== this.paletteGain) {
+      this.paletteGain = gain;
+      for (let i = 0; i <= 4096; i++) {
+        const response = 1 - Math.exp(-Math.sqrt(i / 64 * gain) / 2);
+        const opacity = Math.min(1, response * 4), heat = Math.max(0, (response - .25) / .75);
+        this.palette[i * 3] = 255 - 35 * heat * opacity;
+        this.palette[i * 3 + 1] = 255 - (45 + 175 * heat) * opacity;
+        this.palette[i * 3 + 2] = 255 - (230 + 5 * heat) * opacity;
+      }
+    }
     if (!cleanup) {
       for (let i = 0; i < output.length; i += 4) {
-        for (let c = 0; c < 3; c++) output[i + c] = 255 - Math.min(255, Math.abs(current[i + c] - reference[i + c]) * gain);
+        const change = Math.max(Math.abs(current[i] - reference[i]), Math.abs(current[i + 1] - reference[i + 1]), Math.abs(current[i + 2] - reference[i + 2]));
+        const color = Math.min(4096, Math.round(change * 64)) * 3;
+        for (let c = 0; c < 3; c++) output[i + c] = this.palette[color + c];
         output[i + 3] = 255;
       }
       return;
@@ -56,55 +71,71 @@ export class TactileFilter {
       }
       energy[gy * columns + gx] = sum / ((xEnd - gx * step) * (yEnd - gy * step));
     }
-    // Separable 3x3 neighborhood mean with clamped image boundaries.
-    for (let y = 0; y < rows; y++) for (let x = 0; x < columns; x++) {
-      const i = y * columns + x;
-      horizontal[i] = (energy[i - (x > 0 ? 1 : 0)] + energy[i] + energy[i + (x < columns - 1 ? 1 : 0)]) / 3;
-    }
-    histogram.fill(0);
-    for (let y = 0; y < rows; y++) for (let x = 0; x < columns; x++) {
-      const i = y * columns + x;
-      smooth[i] = (horizontal[i - (y > 0 ? columns : 0)] + horizontal[i] + horizontal[i + (y < rows - 1 ? columns : 0)]) / 3;
-      histogram[Math.min(1020, Math.round(smooth[i] * 4))]++;
-    }
     const quantile = (fraction: number) => {
       let count = 0;
-      for (let i = 0; i < histogram.length; i++) { count += histogram[i]; if (count >= smooth.length * fraction) return i / 4; }
+      for (let i = 0; i < histogram.length; i++) { count += histogram[i]; if (count >= smooth.length * fraction) return i / 16; }
       return 255;
     };
-    const quiet = quantile(.2), median = quantile(.5), spread = Math.max(1, median - quiet);
-    // Estimate background spread before gain. Caps keep broad/strong changes visible.
-    const low = Math.max(4, Math.min(14, median + 3 * spread));
-    const high = Math.max(8, Math.min(22, median + 7 * spread));
-    const minArea = Math.min(smooth.length, Math.max(3, Math.ceil(smooth.length * .0014)));
-    const minCore = Math.min(smooth.length, Math.max(2, Math.ceil(smooth.length * .0004)));
-    mask.fill(0); visited.fill(0);
-    // Hysteresis: a connected region must contain a dense, stronger core.
-    // A bright isolated pixel or a weak scattered cloud cannot enable a region.
-    for (let start = 0; start < smooth.length; start++) {
-      if (visited[start] || smooth[start] <= low) continue;
-      let head = 0, count = 1, core = 0; queue[0] = start; visited[start] = 1;
-      while (head < count) {
-        const i = queue[head++], x = i % columns, y = Math.floor(i / columns);
-        if (smooth[i] > high && energy[i] > high) core++;
-        for (let ny = Math.max(0, y - 1); ny <= Math.min(rows - 1, y + 1); ny++) for (let nx = Math.max(0, x - 1); nx <= Math.min(columns - 1, x + 1); nx++) {
-          const next = ny * columns + nx;
-          if (!visited[next] && smooth[next] > low) { visited[next] = 1; queue[count++] = next; }
+    mask.fill(0);
+    // Fine neighborhoods retain small strong patches; larger neighborhoods pool
+    // weak coherent changes. Both use the same fixed reference and bounded grid.
+    for (const radius of [1, 4]) {
+      const diameter = radius * 2 + 1;
+      for (let y = 0; y < rows; y++) {
+        let sum = 0;
+        for (let k = -radius; k <= radius; k++) sum += energy[y * columns + Math.max(0, Math.min(columns - 1, k))];
+        for (let x = 0; x < columns; x++) {
+          horizontal[y * columns + x] = sum / diameter;
+          sum += energy[y * columns + Math.min(columns - 1, x + radius + 1)] - energy[y * columns + Math.max(0, x - radius)];
         }
       }
-      if (count >= minArea && core >= minCore) for (let j = 0; j < count; j++) {
-        const i = queue[j]; mask[i] = Math.min(1, (smooth[i] - low) / (high - low));
+      histogram.fill(0);
+      for (let x = 0; x < columns; x++) {
+        let sum = 0;
+        for (let k = -radius; k <= radius; k++) sum += horizontal[Math.max(0, Math.min(rows - 1, k)) * columns + x];
+        for (let y = 0; y < rows; y++) {
+          const i = y * columns + x;
+          smooth[i] = sum / diameter;
+          histogram[Math.max(0, Math.min(4080, Math.round(smooth[i] * 16)))]++;
+          sum += horizontal[Math.min(rows - 1, y + radius + 1) * columns + x] - horizontal[Math.max(0, y - radius) * columns + x];
+        }
+      }
+      const median = quantile(.5);
+      histogram.fill(0);
+      for (const value of smooth) histogram[Math.min(4080, Math.round(Math.abs(value - median) * 16))]++;
+      const spread = Math.max(.5, 1.4826 * quantile(.5));
+      // An absolute floor excludes camera noise; the cap preserves broad, strong
+      // changes even when contact occupies most of the image.
+      const low = Math.max(4, Math.min(16, median + 2 * spread));
+      const minArea = Math.min(smooth.length, Math.max(3, Math.ceil(smooth.length * (radius === 1 ? .0014 : .0056))));
+      const minEvidence = smooth.length * (radius === 1 ? 160 : 250) / 14400;
+      visited.fill(0);
+      // Accumulated change lets many weak pixels support a region without a
+      // mandatory strong center. An isolated fluctuation cannot pass both gates.
+      for (let start = 0; start < smooth.length; start++) {
+        if (visited[start] || smooth[start] <= low) continue;
+        let head = 0, count = 1, evidence = 0; queue[0] = start; visited[start] = 1;
+        while (head < count) {
+          const i = queue[head++], x = i % columns, y = Math.floor(i / columns);
+          evidence += (smooth[i] - low) / spread;
+          for (let ny = Math.max(0, y - 1); ny <= Math.min(rows - 1, y + 1); ny++) for (let nx = Math.max(0, x - 1); nx <= Math.min(columns - 1, x + 1); nx++) {
+            const next = ny * columns + nx;
+            if (!visited[next] && smooth[next] > low) { visited[next] = 1; queue[count++] = next; }
+          }
+        }
+        if (count >= minArea && evidence >= minEvidence) for (let j = 0; j < count; j++) {
+          const i = queue[j]; mask[i] = Math.max(mask[i], smooth[i] - low);
+        }
       }
     }
     // Feather accepted regions, leaving every excluded pixel exactly opaque white.
-    // Reuse recorded RGB differences within them instead of inventing a force map.
     for (let y = 0; y < height; y++) {
       const gy = Math.max(0, Math.min(rows - 1, (y + .5) / step - .5)), y0 = Math.floor(gy), y1 = Math.min(rows - 1, y0 + 1), blendY = gy - y0;
       for (let x = 0; x < width; x++) {
         const a = y0 * columns + this.x0[x], b = y0 * columns + this.x1[x], c = y1 * columns + this.x0[x], d = y1 * columns + this.x1[x], blendX = this.blendX[x];
         const top = mask[a] + (mask[b] - mask[a]) * blendX, bottom = mask[c] + (mask[d] - mask[c]) * blendX;
-        const strength = (top + (bottom - top) * blendY) * gain, i = (y * width + x) * 4;
-        for (let channel = 0; channel < 3; channel++) output[i + channel] = 255 - Math.min(255, Math.abs(current[i + channel] - reference[i + channel]) * strength);
+        const color = Math.min(4096, Math.round((top + (bottom - top) * blendY) * 64)) * 3, i = (y * width + x) * 4;
+        for (let channel = 0; channel < 3; channel++) output[i + channel] = this.palette[color + channel];
         output[i + 3] = 255;
       }
     }

@@ -49,9 +49,10 @@ try{
  const doc=await cdp('DOM.getDocument');const input=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'input[accept]'});await cdp('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[archive]});await wait(ready,45000);
  assert.equal(await evaluate("document.querySelectorAll('.episode-button').length"),5);
  await evaluate(`{
+ ${await readFile(join(root,'vendor/tactile-filter.js'),'utf8')};window.__Filter=TactileFilter;
  window.__readPixels=c=>{const copy=document.createElement('canvas');copy.width=c.width;copy.height=c.height;const ctx=copy.getContext('2d');ctx.drawImage(c,0,0);return ctx.getImageData(0,0,copy.width,copy.height).data;};
  window.__references=[...document.querySelectorAll('.tactile-card .software-video')].map(window.__readPixels);
- window.__differenceErrors=()=>[...document.querySelectorAll('.tactile-card')].map((card,index)=>{const actual=window.__readPixels(card.querySelector('.difference-cell canvas')),current=window.__readPixels(card.querySelector('.software-video')),reference=window.__references[index],gain=Number(card.querySelector('input[type=range]').value);let different=0,max=0;for(let i=0;i<actual.length;i+=4)for(let c=0;c<3;c++){const expected=255-Math.min(255,Math.abs(current[i+c]-reference[i+c])*gain);const delta=Math.abs(actual[i+c]-expected);if(delta){different++;max=Math.max(max,delta);}}return {id:card.dataset.channel,different,max};});
+ window.__differenceErrors=()=>[...document.querySelectorAll('.tactile-card')].map((card,index)=>{const actual=window.__readPixels(card.querySelector('.difference-cell canvas')),current=window.__readPixels(card.querySelector('.software-video')),reference=window.__references[index],gain=Number(card.querySelector('input[type=range]').value);const surface=card.querySelector('.difference-cell canvas'),expected=new Uint8ClampedArray(actual.length);new window.__Filter(surface.width,surface.height,reference).render(current,expected,gain,!card.querySelector('input[type=checkbox]').checked);let different=0,max=0;for(let i=0;i<actual.length;i+=4)for(let c=0;c<3;c++){const delta=Math.abs(actual[i+c]-expected[i+c]);if(delta){different++;max=Math.max(max,delta);}}return {id:card.dataset.channel,different,max};});
  }`);
  assert.ok(await evaluate("[...document.querySelectorAll('.tactile-card input[type=range]')].every(g=>g.value==='8')"),'Tactile change starts at 8x gain');
  await evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].filter(c=>c.checked).forEach(c=>c.click())");await delay(100);
@@ -59,7 +60,7 @@ try{
  await evaluate("{const g=document.querySelector('.tactile-card input[type=range]');g.value=8;g.dispatchEvent(new Event('input',{bubbles:true}));}");await delay(100);assert.ok((await evaluate('window.__differenceErrors()')).every(v=>v.different===0));
  await click('.play-button');await delay(1600);await click('.play-button');await delay(100);assert.ok((await evaluate('window.__differenceErrors()')).every(v=>v.different===0));
  await evaluate("{const g=document.querySelector('.tactile-card input[type=range]');g.value=1;g.dispatchEvent(new Event('input',{bubbles:true}));}");await seek(3000);await seek(7000);assert.ok((await evaluate('window.__differenceErrors()')).every(v=>v.different===0));
- report.checks.push('Worker-rendered tactile differences match the original pixel formula exactly at 1x and 8x, while paused, playing, and seeking');
+ report.checks.push('Worker-rendered tactile differences match the shared tactile response filter exactly at 1x and 8x, while paused, playing, and seeking');
  await click('.tactile-card .icon-button');await delay(100);await screenshot('touch-expanded');await click('.expanded-close');assert.ok((await evaluate('window.__differenceErrors()')).every(v=>v.different===0));
  await click('button[aria-label="Expand panel: Motion"]');await delay(100);await screenshot('motion-expanded');await click('button[aria-label="Reset view"]');await click('.expanded-close');await seek(0);await screenshot('nas-overview');report.checks.push('Cached trajectories support seeking, expansion, and reset');
  report.episodes=[];

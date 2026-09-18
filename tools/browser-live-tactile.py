@@ -12,6 +12,7 @@ import urllib.request
 parser = argparse.ArgumentParser()
 parser.add_argument('--viewer', default=str(Path(__file__).resolve().parents[1] / 'dist' / 'viewer.html'))
 parser.add_argument('--source', default='/home/tianyu/Downloads/task-e7244f5d-part-01-of-01')
+parser.add_argument('--task', choices=['sorting','capping','folding'], default='sorting')
 parser.add_argument('--seconds', type=int, default=24)
 parser.add_argument('--label', default='baseline-tar')
 parser.add_argument('--software', action='store_true')
@@ -98,7 +99,8 @@ try:
         evaluate("{const input=document.querySelector('input[webkitdirectory]'),paths="+json.dumps(paths)+";if(input.files.length!==paths.length)throw new Error('Incomplete folder selection');[...input.files].forEach((f,i)=>{if(f.name!==paths[i].split('/').at(-1))throw new Error('File order differs');Object.defineProperty(f,'webkitRelativePath',{value:paths[i]});});input.dispatchEvent(new Event('change',{bubbles:true}));}")
     else:
         command('/element/' + element + '/value', {'text': args.source})
-    wait("document.querySelectorAll('.media-card').length===7 && !document.querySelector('.media-message')", 90)
+    wait("document.querySelectorAll('.media-card').length>=6 && !document.querySelector('.media-message')", 90)
+    assert evaluate("return [...document.querySelectorAll('.tactile-source')].every(c=>getComputedStyle(c).display==='none')")
     alignment=evaluate("return document.querySelector('.alignment-status').textContent")
     if args.expect_capture_timing:
         assert alignment == 'Timestamp alignment', alignment
@@ -122,8 +124,8 @@ try:
     raw=evaluate("clearInterval(window.__liveTimer);return {samples:window.__live,replies:window.__touchReplies,errors:window.__errors,events:window.__events}")
     (out/(args.label+'-live-raw.json')).write_text(json.dumps(raw))
     samples=raw['samples']
-    contacts=[s for s in samples if 9500<=s['timeline']<=11000 or 19500<=s['timeline']<=21000]
-    report={'browser':created['capabilities']['browserVersion'],'delayMs':args.touch_delay_ms,'wallMs':samples[-1]['at']-samples[0]['at'],'advancedMs':samples[-1]['timeline']-samples[0]['timeline'],'busySamples':sum(s['busy'] for s in samples),'errors':raw['errors'],'replies':len(raw['replies']),'last':samples[-1],'contact':{id:{'samples':len(contacts),'visible':sum(next(c['changed'] for c in s['channels'] if c['id']==id)>50 for s in contacts)} for id in ['l_tact_l','l_tact_r']}}
+    contacts=[s for s in samples if (18300<=s['timeline']<=20500 if args.task=='folding' else 18300<=s['timeline']<=19100 if args.task=='capping' else 9500<=s['timeline']<=11000 or 19500<=s['timeline']<=21000)]
+    report={'browser':created['capabilities']['browserVersion'],'delayMs':args.touch_delay_ms,'wallMs':samples[-1]['at']-samples[0]['at'],'advancedMs':samples[-1]['timeline']-samples[0]['timeline'],'busySamples':sum(s['busy'] for s in samples),'errors':raw['errors'],'replies':len(raw['replies']),'last':samples[-1],'contact':{id:{'samples':len(contacts),'visible':sum(next(c['changed'] for c in s['channels'] if c['id']==id)>50 for s in contacts)} for id in (['r_tact_l','r_tact_r'] if args.task=='folding' else ['l_tact_r'] if args.task=='capping' else ['l_tact_l','l_tact_r'])}}
     (out/(args.label+'-live.json')).write_text(json.dumps(report,indent=2))
     (out/(args.label+'-live.png')).write_bytes(base64.b64decode(command('/screenshot',method='GET')))
     print(json.dumps(report,indent=2),flush=True)
