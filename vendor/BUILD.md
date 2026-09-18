@@ -1,0 +1,27 @@
+# Bundled decoder build
+
+The committed `decoder.wasm`, `libav.js`, and `libav-factory.js` support offline H.264/HEVC decoding. The frontend build assembles the worker with `tools/prepare-decoder.mjs`; it passes WebAssembly bytes directly to each worker, avoiding file-origin fetches, SharedArrayBuffer, and cross-origin-isolation requirements.
+
+Pinned upstreams:
+
+- libav.js `v6.9.8.1`, commit `65ce461de1add4c96bc74fac52bd239f900ec11f`
+- FFmpeg `8.1`
+- emfiberthreads `1.3`
+- Emscripten `4.0.22`
+
+Corresponding libav.js, FFmpeg and emfiberthreads source archives are in `sources/`. The libav.js archive includes the exact `viewer` configuration, upstream patches, and build scripts. Emscripten is a development compiler, not a customer requirement.
+
+The release also includes `sources/RobotDataViewer-source.tar.gz` with the frontend source and build inputs needed to relink the app. Extract it and run `npm ci` before replacing decoder files.
+
+To rebuild the decoder, extract the libav.js archive into a build directory, install/activate Emscripten 4.0.22, and source its `emsdk_env.sh`. Place the supplied FFmpeg and emfiberthreads archives in that directory's `build/` folder. Then run:
+
+```sh
+cd configs
+./mkconfig.js viewer '["avformat","avcodec","demuxer-mov","parser-h264","decoder-h264","parser-hevc","decoder-hevc","swscale"]'
+cd ..
+make -j8 OPTFLAGS=-O3 dist/libav-6.9.8.1-viewer.js dist/libav-6.9.8.1-viewer.wasm.js
+```
+
+Copy `dist/libav-6.9.8.1-viewer.js` to `vendor/libav.js`, `dist/libav-6.9.8.1-viewer.wasm.js` to `vendor/libav-factory.js`, and `dist/libav-6.9.8.1-viewer.wasm.wasm` to `vendor/decoder.wasm` in RobotDataViewer. Run `npm run build` to relink the standalone viewer with the replacement library. The app contains no restrictions on replacing or debugging the library.
+
+Only demuxing, parsing, decoding and pixel conversion are enabled. No encoders, network protocols, pthread workers or command-line transcoding runtime are used.

@@ -1,0 +1,26 @@
+{
+  "name": "robot-data-viewer",
+  "version": "1.1.5",
+  "private": true,
+  "type": "module",
+  "description": "An independent, offline viewer for recorded robot and UMI samples.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc --noEmit && vite build && node tools/build-html.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:python": "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "prebuild": "node tools/prepare-decoder.mjs",
+    "predev": "node tools/prepare-decoder.mjs"
+  },
+  "dependencies": {
+    "lucide-vue-next": "1.0.0",
+    "mp4box": "2.3.0",
+    "vue": "3.5.33"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.6",
+    "typescript": "6.0.3",
+    "vite": "7.3.6",
+    "vue-tsc": "3.2.7"
+  }
+}
