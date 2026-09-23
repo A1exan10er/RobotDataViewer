@@ -2,6 +2,7 @@ import type { Episode, EpisodeData, Manifest } from './types';
 import { openPackage, SamplePackage } from './package.ts';
 import { readTar, recordingPath } from './archive.ts';
 import { cameras, findChannel, loadRaw, readJson } from './raw.ts';
+import { safeRelativePath } from './math.ts';
 export interface RecordingSource {
   kind:'original'|'prepared'; manifest:Manifest;
   file(path:string):Blob|undefined;
@@ -18,18 +19,33 @@ class OriginalSource implements RecordingSource {
 }
 async function discover(files:Map<string,Blob>,signal?:AbortSignal):Promise<RecordingSource>{
   const episodes:Episode[]=[];
+  const metadataByRoot=new Map<string,any>(),companions=new Map<string,string>();
   for(const [path,blob] of files){
     if(path!=='metadata.json'&&!path.endsWith('/metadata.json'))continue;
     signal?.throwIfAborted();
     const root=path.slice(0,-'metadata.json'.length);
+    let metadata:any={};try{metadata=await readJson(blob);}catch{/* Available channels can still be inspected. */}
+    metadataByRoot.set(root,metadata);
+    // Only an explicit export relationship joins episodes. Paths must remain
+    // inside the selected export; source_capture/alignment provenance is not a link.
+    if(metadata.format==='ego-headcam-companion-1'&&safeRelativePath(metadata.umi_episode)){
+      companions.set(root,root+metadata.umi_episode+'/');
+    }
+  }
+  const includedRoots=new Set(companions.values());
+  for(const [root,metadata] of metadataByRoot){
+    signal?.throwIfAborted();
+    if(includedRoots.has(root))continue;
+    const stateRoot=companions.get(root)??root;
     const media=Object.entries(cameras).flatMap(([id,name])=>{
-      const path=findChannel(files,root,'observation.image.'+name,'video.mp4');
+      const cameraRoot=id.startsWith('ego_')?root:stateRoot;
+      const path=findChannel(files,cameraRoot,'observation.image.'+name,'video.mp4');
       return path?[{id,kind:id.includes('tact')?'tactile' as const:'rgb' as const,path,original:path,width:0,height:0,fps:30,frames:0,duration:1}]:[];
     });
-    if(!media.length&&!findChannel(files,root,'observation.state.eef_pose')&&!findChannel(files,root,'observation.state.gripper'))continue;
-    let metadata:any={};try{metadata=await readJson(blob);}catch{/* Available channels can still be inspected. */}
+    if(!media.length&&!findChannel(files,stateRoot,'observation.state.eef_pose')&&!findChannel(files,stateRoot,'observation.state.gripper'))continue;
+    const stateMetadata=metadataByRoot.get(stateRoot)??{};
     const name=root.split('/').filter(Boolean).at(-1)||'episode';
-    episodes.push({id:root||name,title:String(metadata.task_title||metadata.task_name||name),robot:String(metadata.robot_type||metadata.robot||'robot'),durationMs:Number(metadata.duration_seconds)*1000||1,data:root,sourceName:root.replace(/\/$/,'')||name,media,issues:[]});
+    episodes.push({id:root||name,title:String(metadata.task_title||metadata.task_name||stateMetadata.task_title||stateMetadata.task_name||name),robot:String(metadata.robot_type||metadata.robot||stateMetadata.robot_type||stateMetadata.robot||'robot'),durationMs:Number(metadata.duration_seconds)*1000||1,data:root,...(stateRoot!==root?{stateRoot}:{}),sourceName:root.replace(/\/$/,'')||name,media,issues:[]});
   }
   episodes.sort((a,b)=>a.sourceName.localeCompare(b.sourceName));
   if(!episodes.length)throw new Error('missingRecording');

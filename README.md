@@ -1,6 +1,6 @@
 # Robot Data Viewer
 
-Open original robot and UMI recordings directly. Explore synchronized RGB video, 3D end-effector trajectories, colored tactile response maps, and recorded numeric signals in an English/Chinese dark interface.
+Open original robot, UMI, and head-camera companion recordings directly. Explore synchronized RGB video, 3D end-effector trajectories, colored tactile response maps, and recorded numeric signals in an English/Chinese dark interface.
 
 **Download:** get `RobotDataViewer.zip` from the [GitHub releases](https://github.com/A1exan10er/RobotDataViewer/releases) or [Gitea releases](http://192.168.50.209:3000/yangtianyu/RobotDataViewer/releases). Extract the ZIP and double-click `RobotDataViewer/viewer.html`. Keep the included notices and source materials with the viewer when sharing it.
 
@@ -11,6 +11,8 @@ Open original robot and UMI recordings directly. Explore synchronized RGB video,
 ## Supported data
 
 The viewer reads collector `metadata.json`, MP4 videos, camera timestamps, and state CSVs directly from dotted or nested `observation.image` / `observation.state` directories. Folder selection discovers episodes recursively. Plain TAR archives are indexed in memory and their file entries read through Blob slices; nothing is extracted to disk.
+
+Head-camera companion exports (`ego-headcam-companion-1`) open as one episode: both head views plus the wrist cameras, tactile response, trajectories, and signals in the nested UMI folder. Select the whole export folder (for example, `T1E1`), its parent, or its uncompressed TAR. No rearrangement or conversion is needed.
 
 Native browser video playback is used where supported. A bundled WebAssembly H.264/HEVC decoder automatically handles other recordings. Software video decoding and tactile response processing run in background workers with bounded decode-ahead buffers. Playback fills a reserve before starting or resuming after an underrun. Native browser playback corrects small clock differences through gentle speed adjustment instead of repeated seeks. Ready-to-display frames are transferred to the interface, and trajectory geometry is cached so playback does not repeatedly recalculate full paths. The viewer works offline even when the operating system has no HEVC codec. Playback performance depends on resolution, channel count, and the computer; the shared timeline waits when decoding needs to catch up.
 

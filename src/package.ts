@@ -40,7 +40,7 @@ export async function openPackage(files: File[]): Promise<SamplePackage> {
       ids.add(ep.id);
       const channels = new Set<string>();
       for (const media of ep.media) {
-        if (!['third','second_third','l_wrist','r_wrist','l_tact_l','l_tact_r','r_tact_l','r_tact_r'].includes(media.id) || channels.has(media.id) || !['rgb','tactile'].includes(media.kind) || !safeRelativePath(media.path) || !safeRelativePath(media.original) || !Number.isFinite(media.duration) || media.duration <= 0 || !Number.isFinite(media.fps) || media.fps <= 0) throw new Error('invalidPackage');
+        if (!['ego_left','ego_right','third','second_third','l_wrist','r_wrist','l_tact_l','l_tact_r','r_tact_l','r_tact_r'].includes(media.id) || channels.has(media.id) || !['rgb','tactile'].includes(media.kind) || !safeRelativePath(media.path) || !safeRelativePath(media.original) || !Number.isFinite(media.duration) || media.duration <= 0 || !Number.isFinite(media.fps) || media.fps <= 0) throw new Error('invalidPackage');
         channels.add(media.id);
       }
     }

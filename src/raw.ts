@@ -2,7 +2,7 @@ import { finite, parseCsv, type Csv } from './csv.ts';
 import { probeMovie } from './mp4.ts';
 import type { Episode, EpisodeData, Issue, Timing, Trajectory, Vec3 } from './types';
 
-export const cameras: Record<string,string> = {third:'third_view',second_third:'second_third_view',l_wrist:'left_wrist_view',r_wrist:'right_wrist_view',l_tact_l:'left_wrist_left_tactile',l_tact_r:'left_wrist_right_tactile',r_tact_l:'right_wrist_left_tactile',r_tact_r:'right_wrist_right_tactile'};
+export const cameras: Record<string,string> = {ego_left:'ego_left',ego_right:'ego_right',third:'third_view',second_third:'second_third_view',l_wrist:'left_wrist_view',r_wrist:'right_wrist_view',l_tact_l:'left_wrist_left_tactile',l_tact_r:'left_wrist_right_tactile',r_tact_l:'right_wrist_left_tactile',r_tact_r:'right_wrist_right_tactile'};
 type Matrix = number[][];
 function axes6(v: number[]): Vec3[] | null {
   const norm = (v:number[]) => {const d=Math.hypot(...v);return d>1e-8?v.map(x=>x/d) as Vec3:null;};
@@ -45,11 +45,11 @@ export function parseTrajectories(csv:Csv, metadata:unknown, issues:Issue[]): Tr
   }
   if(!out.length)issues.push({code:'missing_trajectory'});return out;
 }
-export function makeTiming(pts:number[], rows:Csv['rows'], rawRows:Csv['rows']=[]): Timing {
+export function makeTiming(pts:number[], rows:Csv['rows'], rawRows:Csv['rows']=[], preference:'raw'|'processed'='raw'): Timing {
   // Raw capture times describe all video frames. Training observations may omit
   // the final row when paired with the following action (e.g. hand-guided ARX5).
   const raw=rawRows.map(r=>finite(r.timestamp_ms)),processed=rows.map(r=>finite(r.timestamp_ms));
-  const captured=[raw,processed].find(times=>times.length===pts.length &&
+  const captured=(preference==='processed'?[processed,raw]:[raw,processed]).find(times=>times.length===pts.length &&
     times.every((t,i)=>t!==null&&t>=0&&(i===0||t>=times[i-1]!)) &&
     (times.length===1||times.at(-1)!>times[0]!));
   const offset=processed.find(t=>t!==null&&t>=0)??raw.find(t=>t!==null&&t>=0)??0;
@@ -64,14 +64,15 @@ export async function readJson(blob:Blob): Promise<any> {
   if(!data||typeof data!=='object'||Array.isArray(data))throw new Error('invalidRecording');return data;
 }
 export async function loadRaw(files:Map<string,Blob>, ep:Episode, signal?:AbortSignal): Promise<EpisodeData> {
-  const root=ep.data;let metadata:any={};try{metadata=await readJson(files.get(root+'metadata.json')!);}catch{}signal?.throwIfAborted();
+  const root=ep.stateRoot??ep.data;let metadata:any={};try{metadata=await readJson(files.get(root+'metadata.json')!);}catch{}signal?.throwIfAborted();
   ep.issues=[];const issues=ep.issues;
-  const csv=async(modality:string,name='data.csv'):Promise<Csv>=>{
-    const path=findChannel(files,root,modality,name);if(!path)return {columns:[],rows:[]};
+  const readCsv=async(path:string|undefined,channel:string):Promise<Csv>=>{
+    if(!path||!files.has(path))return {columns:[],rows:[]};
     const blob=files.get(path)!;signal?.throwIfAborted();
     try{if(blob.size>128*1024*1024)throw new Error('large CSV');return parseCsv(await blob.text());}
-    catch{issues.push({code:'invalid_samples',channel:modality});return {columns:[],rows:[]};}
+    catch{issues.push({code:'invalid_samples',channel});return {columns:[],rows:[]};}
   };
+  const csv=(modality:string,name='data.csv')=>readCsv(findChannel(files,root,modality,name),modality);
   const state=await csv('observation.state.eef_pose');
   const data:EpisodeData={trajectories:parseTrajectories(state,metadata,issues),signals:[],timings:{}};
   for(const name of ['eef_pose','gripper','joint_position','joint_velocity',...Object.values(cameras).filter(n=>n.includes('tactile'))]){
@@ -90,9 +91,12 @@ export async function loadRaw(files:Map<string,Blob>, ep:Episode, signal?:AbortS
     try {
       const info=await probeMovie(files.get(media.path)!,signal);
       Object.assign(media,{width:info.width,height:info.height,duration:info.duration,fps:info.fps,frames:info.pts.length,codec:info.codec});
-      const modality='observation.image.'+cameras[media.id];
-      const [processed,raw]=await Promise.all([csv(modality,'timestamps.csv'),csv(modality,'timestamps_raw.csv')]);
-      const timing=makeTiming(info.pts,processed.rows,raw.rows);
+      // Timing belongs to this MP4, including cameras outside the UMI folder.
+      const directory=media.path.slice(0,media.path.lastIndexOf('/')+1);
+      const [processed,raw]=await Promise.all(['timestamps.csv','timestamps_raw.csv'].map(name=>readCsv(directory+name,media.id)));
+      // Head exports already express capture times on the shared episode clock.
+      // Source sequence/raw indexes are provenance, not indexes into this MP4.
+      const timing=makeTiming(info.pts,processed.rows,raw.rows,media.id.startsWith('ego_')?'processed':'raw');
       data.timings[media.id]=timing;if(timing.estimated)issues.push({code:'estimated_alignment',channel:media.id});
       end=Math.max(end,timing.episode.at(-1)!+(info.duration-info.pts.at(-1)!)*1000);
     } catch(e) {

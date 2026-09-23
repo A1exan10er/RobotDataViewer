@@ -44,6 +44,7 @@ const words = {
   columns: ['channels', '个通道'], seconds: ['s', '秒'], tryAgain: ['Choose another folder', '选择其他文件夹'],
   sensor_l_tact_l: ['Left hand · Left sensor', '左手 · 左传感器'], sensor_l_tact_r: ['Left hand · Right sensor', '左手 · 右传感器'],
   sensor_r_tact_l: ['Right hand · Left sensor', '右手 · 左传感器'], sensor_r_tact_r: ['Right hand · Right sensor', '右手 · 右传感器'],
+  sensor_ego_left: ['Head camera · Left eye', '头戴相机 · 左眼'], sensor_ego_right: ['Head camera · Right eye', '头戴相机 · 右眼'],
   sensor_third: ['Overview', '全局视角'], sensor_second_third: ['Overview 2', '全局视角 2'], sensor_l_wrist: ['Left wrist', '左腕视角'], sensor_r_wrist: ['Right wrist', '右腕视角'],
 } satisfies Record<string, [string, string]>;
 export type Word = keyof typeof words;

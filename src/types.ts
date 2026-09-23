@@ -9,6 +9,8 @@ export type Media = {
 export type Episode = {
   id: string; title: string; robot: string; durationMs: number; data: string;
   media: Media[]; issues: Issue[]; sourceName: string;
+  /** Original companion exports keep UMI metadata and numeric channels here. */
+  stateRoot?: string;
 };
 export type Manifest = { format: 'robot-data-viewer'; version: 1; episodes: Episode[] };
 export type Timing = { media: number[]; episode: number[]; estimated: boolean };

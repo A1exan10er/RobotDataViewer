@@ -17,6 +17,7 @@ parser.add_argument('--seconds', type=int, default=45)
 parser.add_argument('--label', default='baseline-tar')
 parser.add_argument('--software', action='store_true')
 parser.add_argument('--headed', action='store_true')
+parser.add_argument('--headcam', action='store_true', help='Check eight-camera head companion layout and controls')
 parser.add_argument('--tactile-clean-check', action='store_true', help='Check native cleanup, fixed-reference contact display, and the unfiltered switch on the ARX5 sample')
 parser.add_argument('--expect-capture-timing', action='store_true', help='Require recorded timestamp alignment after opening')
 parser.add_argument('--jank', type=int, default=0, help='Periodic UI delay in milliseconds to test clock recovery')
@@ -90,11 +91,41 @@ try:
         evaluate("{const input=document.querySelector('input[webkitdirectory]'),paths="+json.dumps(paths)+";if(input.files.length!==paths.length)throw new Error('Incomplete folder selection');[...input.files].forEach((f,i)=>{if(f.name!==paths[i].split('/').at(-1))throw new Error('File order differs');Object.defineProperty(f,'webkitRelativePath',{value:paths[i]});});input.dispatchEvent(new Event('change',{bubbles:true}));}")
     else:
         command('/element/' + element + '/value', {'text': args.source})
+    if args.headcam:
+        wait("document.querySelectorAll('.media-card').length===8 && !document.querySelector('.loading-view')", 90)
+        evaluate("{const t=document.querySelector('.timeline');t.value=100;t.dispatchEvent(new Event('input',{bubbles:true}));}")
     wait("document.querySelectorAll('.media-card').length>=6 && !document.querySelector('.media-message')", 90)
     alignment=evaluate("return document.querySelector('.alignment-status').textContent")
     if args.expect_capture_timing:
         assert alignment == 'Timestamp alignment', alignment
     print('Opened', args.source, evaluate("return [...document.querySelectorAll('.media-card')].map(c=>c.dataset.mode)"), flush=True)
+    if args.headcam:
+        assert evaluate("return document.querySelectorAll('.episode-button').length") == 1
+        assert evaluate("return document.body.innerText.includes('Head camera · Left eye') && document.body.innerText.includes('Head camera · Right eye')")
+        def seek_head(ms):
+            evaluate("{const t=document.querySelector('.timeline');t.value="+str(ms)+";t.dispatchEvent(new Event('input',{bubbles:true}));}")
+            wait("!document.querySelector('.playback-bar .spin') && !document.querySelector('.media-message')")
+            time.sleep(.3)
+        def times_head():
+            return evaluate("return [...document.querySelectorAll('.media-card')].map(c=>c.dataset.mode==='software'?Number(c.querySelector('.software-video').dataset.presentedTime):c.querySelector('video').currentTime)")
+        seek_head(5000);first=times_head();seek_head(1000);seek_head(5000)
+        assert all(abs(a-b)<.001 for a,b in zip(first,times_head())), 'Repeated seeks differ'
+        evaluate("document.querySelector('[aria-label=\"Next frame\"]').click()")
+        time.sleep(.4)
+        assert evaluate("return Number(document.querySelector('.timeline').value)") > 5000
+        evaluate("document.querySelector('[aria-label=\"Previous frame\"]').click()")
+        time.sleep(.4)
+        assert evaluate("return Number(document.querySelector('.timeline').value)") < 5030
+        evaluate("document.querySelector('[data-channel=ego_left] .icon-button').click()")
+        wait("!!document.querySelector('.expanded-panel')")
+        assert evaluate("return document.querySelector('.expanded-panel').textContent.includes('Head camera · Left eye')")
+        evaluate("document.querySelector('.expanded-close').click();document.querySelector('.language-button').click()")
+        assert evaluate("return document.body.innerText.includes('头戴相机 · 左眼') && document.body.innerText.includes('头戴相机 · 右眼')")
+        (out / (args.label + '-zh.png')).write_bytes(base64.b64decode(command('/screenshot', method='GET')))
+        evaluate("document.querySelector('.language-button').click()")
+        assert evaluate("return document.documentElement.scrollWidth<=innerWidth")
+        seek_head(1000)
+        print('Head camera layout, pause/seek/step, expansion and bilingual labels passed', flush=True)
     if args.tactile_clean_check:
         assert evaluate("return [...document.querySelectorAll('.tactile-card input[type=checkbox]')].every(c=>!c.checked)")
         filter_code=(Path(__file__).resolve().parents[1]/'vendor'/'tactile-filter.js').read_text()

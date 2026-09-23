@@ -6,6 +6,8 @@
 
 You can select `local-data` directly. An episode TAR can be opened as collected, without unpacking or preparing it. Everything stays on your computer and works offline.
 
+For head-camera recordings, select the complete export folder, such as **T1E1**, or its TAR. The two head views, wrist views, tactile response, and motion will appear together automatically; keep the included `umi` folder in place.
+
 Drag the timeline to seek. Use the speed menu or the previous/next-frame buttons. Space toggles playback; the arrow keys step through frames. Expand any panel for a closer look. For trajectories, drag to orbit, Shift-drag to pan, and scroll to zoom. Open Recorded signals to inspect numeric channels.
 
 Each **Tactile response** panel shows one map at the recorded sensor orientation. Amber through red means increasing image response relative to the first frame; white means no detected response. The **Weak–Strong** legend describes relative image response, not measured force or pressure. Background cleanup is automatic. Open the panel’s display settings (sliders icon) to adjust display gain from 1× to 16× (default 8×), or enable **Show all changes** to include small differences and noise. The first frame stays the reference during playback and seeking, so a sustained recorded change does not fade away. The viewer cannot show contact that has no detectable tactile-image change. Original recordings are unchanged.

@@ -1,5 +1,20 @@
 # Validation
 
+## Head-camera companion exports (1.1.7)
+
+Validated locally on 2026-09-23. Read-only inspection of the supplied remote `T1E1` export confirmed `ego-headcam-companion-1`, two 1920×1080 H.264 head videos at 60 fps, two 640×480 HEVC wrist videos and four 640×360 HEVC tactile videos at 30 fps inside `umi`. Both head CSVs contain 2,636 timestamps for 2,636 frames; every UMI raw CSV contains 1,329 timestamps for 1,329 frames. All eight timelines are nonnegative and monotonic. Head capture times span 7.648807–44,312.817874 ms. The processed UMI files intentionally contain 1,328 rows. No source files were modified.
+
+The real recording was not copied or played locally: automatic approval review rejected transfer of both the full recording and a four-second excerpt. Browser checks therefore use **synthetic** eight-stream exports with matching codecs, dimensions, frame rates, nested layout, fractional capture timestamps, source indexes beginning at 580, and shortened UMI training timestamps. This establishes reader/control compatibility and measures synthetic playback, not real-recording image content or full-episode performance.
+
+- Six new source regressions exercise actual MP4 probing through folder and TAR inputs, one combined episode, nested UMI task/pose metadata, correct head/UMI CSV precedence, fractional offsets, irregular timing, source-index independence, repeat loads, separate episodes, UMI-only selection, partial/corrupt media, missing timestamps, unsafe links, and nested directory conventions. All 39 JavaScript cases across six test files and all eight Python cases passed; production TypeScript/build checks passed.
+- Chrome 152: normal folder playback advanced 5,466 ms in 5,494 ms; TAR playback advanced 5,467 ms in 5,514 ms. Both had zero busy samples after startup. Head videos used native H.264 playback; the six UMI streams used software HEVC decoding. No runtime exceptions or outbound page requests occurred.
+- Firefox 156: native TAR playback advanced 6,050 ms in 6,049 ms, with zero busy samples, zero status transitions, no runtime errors, and no dropped frames reported by the video elements. Each head stream reported 361 frames, and each UMI stream 182. The folder run advanced 6,000 ms in 6,008 ms, also without buffering or errors; head elements reported two dropped frames each out of 358, and UMI elements zero. Callback sampling is not a frame-drop measurement.
+- Chrome and Firefox folder/TAR checks passed one-episode/eight-channel display, timestamp alignment, pause, repeated seek, next/previous frame, head-view expansion, English/Chinese labels, and no horizontal overflow. Screenshots were inspected. Chrome's forced-software mode also passed decode/control checks, but advanced only 2,183 ms in 5,480 ms with repeated buffering. Two full-HD 60 fps software streams exceed this test computer's real-time capacity; normal browser selection keeps head video native. No claim of smooth all-software playback is made.
+
+Reproduce synthetic browser checks with `python3 tests/make_headcam_fixture.py`, `node tools/browser-headcam.mjs`, and `python3 tools/browser-firefox.py --headcam --expect-capture-timing --source /path/to/headcam.tar --seconds 6 --check`. Firefox's sandbox requires accessible viewer, input and profile paths. Unit MP4 fixtures are three-frame generated solid colors; no customer recordings are committed or included in the portable ZIP.
+
+Evidence: `artifacts/headcam-1.1.7/remote-timing-check.json`, `artifacts/headcam-browser/results.json`, and `artifacts/firefox/headcam-native-*.json` with screenshots alongside. Previous releases remain available.
+
 ## Tactile response (1.1.6)
 
 Validated locally on 2026-09-18. The v1.1.5 source/tag and release artifacts are preserved.

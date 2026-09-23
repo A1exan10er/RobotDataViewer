@@ -1,6 +1,6 @@
 {
   "name": "robot-data-viewer",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "type": "module",
   "description": "An independent, offline viewer for recorded robot and UMI samples.",

@@ -70,7 +70,7 @@ const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':co
     <input ref="input" class="file-input" type="file" webkitdirectory multiple @change="choose" aria-label="Recording folder" />
     <input ref="archiveInput" class="file-input" type="file" accept=".tar,application/x-tar" @change="choose" aria-label="Episode TAR archive" />
     <header class="app-header" :inert="!!expanded">
-      <div class="brand"><div class="brand-mark"><Aperture :size="24" :stroke-width="1.7" /></div><span>{{ t('brand') }}<small>DATA EXPLORER</small></span><span class="version-label">1.1.6</span></div>
+      <div class="brand"><div class="brand-mark"><Aperture :size="24" :stroke-width="1.7" /></div><span>{{ t('brand') }}<small>DATA EXPLORER</small></span><span class="version-label">1.1.7</span></div>
       <div class="header-actions"><span class="offline-label"><i></i>{{ t('local') }}</span><button class="language-button" @click="language = language === 'en' ? 'zh' : 'en'" :aria-label="language === 'en' ? '切换为中文' : 'Switch to English'"><Globe2 :size="15" />{{ language==='en'?'中文':'EN' }}</button><button v-if="samplePackage" class="button secondary small" @click="input?.click()"><FolderOpen :size="16" />{{ t('open') }}</button><button v-if="samplePackage" class="button secondary small" @click="archiveInput?.click()">{{ t('openArchive') }}</button></div>
     </header>
 
