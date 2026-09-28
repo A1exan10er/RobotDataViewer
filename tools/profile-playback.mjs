@@ -50,7 +50,7 @@ try{
  new PerformanceObserver(list=>window.__long.push(...list.getEntries().map(e=>({start:e.startTime,duration:e.duration})))).observe({entryTypes:['longtask']});
  const Base=Worker;window.Worker=class extends Base{constructor(...args){super(...args);window.__liveWorkers.add(this);this.sent=new Map();this.addEventListener('message',e=>{const sent=this.sent.get(e.data.id);if(sent&&sent.method==='batch'){window.__batches.push({at:performance.now(),ms:performance.now()-sent.at,frames:e.data.result?.frames?.length||0});}this.sent.delete(e.data.id);});}postMessage(data,...args){this.sent.set(data.id,{at:performance.now(),method:data.method});return super.postMessage(data,...args);}terminate(){window.__liveWorkers.delete(this);return super.terminate();}};
  }`});
- await viewport(1366,900);await cdp('Page.navigate',{url:pathToFileURL(join(root,'dist/viewer.html')).href});await wait("!!document.querySelector('.open-main')");
+ await viewport(1366,900);await cdp('Page.navigate',{url:pathToFileURL(process.env.RDV_VIEWER||join(root,'dist/viewer.html')).href});await wait("!!document.querySelector('.open-main')");
  const doc=await cdp('DOM.getDocument');const node=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:folder?'input[webkitdirectory]':'input[accept]'});await cdp('DOM.setFileInputFiles',{nodeId:node.nodeId,files:[archive]});
  await wait("document.querySelectorAll('.media-card').length===7 && !document.querySelector('.media-message')",45000);
  await cdp('Emulation.setCPUThrottlingRate',{rate:throttle});

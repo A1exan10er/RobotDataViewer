@@ -61,3 +61,17 @@ test('obsolete failures and disposed results cannot paint or report a false rend
   assert.deepEqual(painted,[]);assert.equal(late.closed,1);assert.equal(failures(),0);
   video.seek(10);video.finishSeek();assert.equal(jobs.length,2);
 });
+
+test('suspending the old native renderer blocks seek callbacks, old settings and delayed paints',async()=>{
+  const {video,painted,jobs,playback}=setup();playback.update(10,true);
+  playback.dispose(); // TactileRenderer.suspend detaches this automatic renderer.
+  video.seek(4);video.finishSeek();video.dispatchEvent(new Event('pause'));playback.update(16,false);
+  assert.equal(jobs.length,1,'only the separate staged request may render now');
+  const late=new Frame(1);jobs[0].resolve(late);await flush();assert.deepEqual(painted,[]);assert.equal(late.closed,1);
+  const fresh=new TactilePlayback(video,(gain,cleanup)=>{assert.equal(gain,16);assert.equal(cleanup,false);return Promise.resolve(new Frame(2));},(frame,time)=>{assert.equal(time,4);painted.push(frame.id);},()=>assert.fail());
+  fresh.update(16,false);await flush();assert.deepEqual(painted,[2]);fresh.dispose();
+});
+test('synchronous capture errors are reported without escaping the animation callback',()=>{
+  let failures=0;const value=new TactilePlayback(new Video(),()=>{throw new Error('capture');},()=>assert.fail(),()=>failures++);
+  assert.doesNotThrow(()=>value.update(10,true));assert.equal(failures,1);value.dispose();
+});

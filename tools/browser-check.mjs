@@ -55,6 +55,7 @@ try {
   session=(await cdp('Target.attachToTarget',{targetId:target.targetId,flatten:true},true)).sessionId;
   await cdp('Page.enable');await cdp('Runtime.enable');await cdp('Network.enable');
   await cdp('Network.setBlockedURLs',{urls:['http://*','https://*','ws://*','wss://*']});
+  await cdp('Page.addScriptToEvaluateOnNewDocument',{source:await readFile(join(root,'tools','tactile-browser-probe.js'),'utf8')});
   await viewport(1366,768);
   await cdp('Page.navigate',{url:pathToFileURL(join(root,'dist','viewer.html')).href});
   await wait("!!document.querySelector('.open-main')");await screenshot('welcome-1366');
@@ -63,15 +64,10 @@ try {
     const manifest=JSON.parse(await readFile(join(sampleDir,'manifest.json'),'utf8'));
     await setFolder(sampleDir);
     await wait("document.querySelectorAll('.media-card video').length > 0 && [...document.querySelectorAll('.media-card video')].every(v=>v.readyState>=2)",30000);
-    await wait("[...document.querySelectorAll('.difference-cell canvas')].every(c=>c.width>300) && ![...document.querySelectorAll('.media-message')].some(e=>e.textContent.includes('reference'))",20000);
+    await wait("[...document.querySelectorAll('.difference-cell canvas')].every(c=>c.width>300) && !document.querySelector('.media-message')",20000);
     await delay(400);await screenshot('recording-en-1366');
     await evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].filter(c=>c.checked).forEach(c=>c.click())");await delay(100);
-    await evaluate(`{
-      ${await readFile(join(root,'vendor/tactile-filter.js'),'utf8')};window.__Filter=TactileFilter;
- window.__nativePixels=v=>{const c=document.createElement('canvas');c.width=v.videoWidth||v.width;c.height=v.videoHeight||v.height;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);return ctx.getImageData(0,0,c.width,c.height).data;};
-      window.__nativeReferences=[...document.querySelectorAll('.tactile-card video')].map(window.__nativePixels);
-      window.__nativeDifferenceErrors=()=>[...document.querySelectorAll('.tactile-card')].map((card,index)=>{const actual=window.__nativePixels(card.querySelector('.difference-cell canvas')),current=window.__nativePixels(card.querySelector('video')),reference=window.__nativeReferences[index],gain=Number(card.querySelector('input[type=range]').value);const surface=card.querySelector('.difference-cell canvas'),expected=new Uint8ClampedArray(actual.length);new window.__Filter(surface.width,surface.height,reference).render(current,expected,gain,!card.querySelector('input[type=checkbox]').checked);let different=0,max=0;for(let i=0;i<actual.length;i+=4)for(let c=0;c<3;c++){const delta=Math.abs(actual[i+c]-expected[i+c]);if(delta){different++;max=Math.max(max,delta);}}return {id:card.dataset.channel,different,max};});
-    }`);
+    await evaluate(`{${await readFile(join(root,'vendor/tactile-filter.js'),'utf8')};window.__installTactileCheck(TactileFilter);window.__nativeDifferenceErrors=()=>window.__check().map(c=>({...c,different:c.errors}));}`);
     report.checks.push('Real package folder loaded; cameras and tactile references decoded');
     await click('.play-button');await delay(2400);await click('.play-button');
     const progress=await evaluate("Number(document.querySelector('.timeline').value)");assert.ok(progress>1000,`Playback did not advance: ${progress}`);
@@ -84,10 +80,10 @@ try {
     const {mediaTimeAt}=await import('../src/math.ts');
     for(const item of report.seek){assert.equal(item.error,null);const channel=ep.media.find(m=>m.id===item.id);const delta=Math.abs(item.time-mediaTimeAt(data.timings[item.id],seekMs));assert.ok(delta<=1/channel.fps+.002,`Seek drift ${item.id}: ${delta}`);}
     report.checks.push('Synchronized play/pause and seek within one frame');
-    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile response at default 8x');
+    assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile response at default 10x');
     await evaluate("{const g=document.querySelector('.tactile-card input[type=range]');g.value=1;g.dispatchEvent(new Event('input',{bubbles:true}));}");await delay(250);
     assert.ok((await evaluate('window.__nativeDifferenceErrors()')).every(v=>v.different===0),'Native tactile response at 1x');
-    report.checks.push('Native worker tactile rendering preserves exact reference differences at 1x and 8x gain');
+    report.checks.push('Native worker tactile rendering preserves exact reference differences at 1x and 10x gain');
     await screenshot('seek-en-1366');
     const hash=()=>evaluate("[...document.querySelectorAll('.difference-cell canvas')].map(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s=0;for(let i=0;i<d.length;i++)s=(s+d[i]*(i%97+1))%1000000007;return s})");
     const before=await hash();await click('.tactile-card .icon-button');await delay(150);await screenshot('touch-expanded');

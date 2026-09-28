@@ -3,179 +3,224 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Maximize2, AlertCircle, SlidersHorizontal } from 'lucide-vue-next';
 import type { Media, Timing } from '../types';
 import type { Playback } from '../playback';
+import type { ChannelState } from '../synchronizedChannel';
 import { channelName, t } from '../i18n';
-import { TactileFilter } from '../tactileFilter';
-import { TactileRenderer } from '../tactile';
-import { NativeTransport, SoftwareTransport, type Transport, type DecodedFrame } from '../transport';
+import type { TactileBaseline } from '../tactileFilter';
+import { tactileCache, calibrationKey } from '../tactileCache';
+import { collectNativeBaseline } from '../tactileCalibration';
+import { playbackMark } from '../playbackMetrics';
+import { RenderOrder } from '../renderOrder';
+import { TactileRenderer, type TactileImage } from '../tactile';
+import { NativeTransport, SoftwareTransport, sequentialTactile, closeFrame, type Transport, type DecodedFrame } from '../transport';
 
 const props = defineProps<{ media: Media; url?: string; blob?: Blob; timing: Timing; playback: Playback }>();
 defineEmits<{ expand: [] }>();
-const video = ref<HTMLVideoElement | null>(null), canvas = ref<HTMLCanvasElement | null>(null);
-const surface = ref<HTMLCanvasElement | null>(null), software = ref(false), opening = ref(true);
-const aspect = ref('16 / 9');
-let transport:Transport | null=null, currentFrame:DecodedFrame | null=null;
-const failed = ref(!props.url || props.media.failed), referenceError = ref(false), ready = ref(false), gain = ref(8), cleanup = ref(true);
-let touchRenderer:TactileRenderer|null=null, touchFilter:TactileFilter|null=null;
-let settingsRenderer:TactileRenderer|null=null, settingsReady:Promise<unknown>|null=null, settingsPending=false, settingsRequested=false, settingsGeneration=0;
-let reference: Uint8ClampedArray | null = null, output: ImageData | null = null;
-let buffer: HTMLCanvasElement | null = null, decoder: HTMLVideoElement | null = null;
-let animationFrame = 0, lastDraw = 0, lastTime = -1, disposed = false, referenceTimeout = 0;
-const showAll = computed({ get: () => !cleanup.value, set: (value: boolean) => { cleanup.value = !value; } });
-const outside = computed(() => {
-  const ep = props.timing.episode, media = props.timing.media;
-  const end = ep[ep.length - 1] + (props.media.duration - media[media.length - 1]) * 1000;
-  return props.playback.time.value < ep[0] || props.playback.time.value >= end;
-});
-function draw() {
+const video=ref<HTMLVideoElement|null>(null),canvas=ref<HTMLCanvasElement|null>(null),surface=ref<HTMLCanvasElement|null>(null);
+const query=new URLSearchParams(location.search);
+const software=ref(query.has('software')||(props.media.kind==='tactile'&&sequentialTactile(props.media.codec||'')&&!query.has('nativeTactile'))),opening=ref(true),aspect=ref('16 / 9'),state=ref<ChannelState>('preparing');
+const readyGeneration=ref(-1);
+const failed=ref(!props.url||props.media.failed),referenceError=ref(false),ready=ref(false),gain=ref(10),cleanup=ref(true),regionMissing=ref(false);
+let transport:Transport|null=null,currentFrame:DecodedFrame|null=null,reference:TactileBaseline|null=null;
+let touchRenderer:TactileRenderer|null=null;
+let settingsPending=false,settingsRequested=false,calibrationAbort:AbortController|null=null;
+const renderOrder=new RenderOrder();
+let animationFrame=0,lastDraw=0,lastTime=-1,disposed=false,firstCamera=false;
+const tactile=props.media.kind==='tactile';
+const channel=props.playback.channel(props.media.id);
+let openingTimer:ReturnType<typeof setTimeout>|undefined;
+let settingsRevision=0,stagePending=false;
+let stageRequest:{generation:number;settingsRevision:number}|null=null;
+const pixelMode=()=>typeof OffscreenCanvas==='undefined'||typeof createImageBitmap!=='function';
+const showAll=computed({get:()=>!cleanup.value,set:(value:boolean)=>{cleanup.value=!value;}});
+const outside=computed(()=>{const ep=props.timing.episode,media=props.timing.media;return props.playback.time.value<ep[0]||props.playback.time.value>=ep.at(-1)!+(props.media.duration-media.at(-1)!)*1000;});
+const mark=(event:string,detail?:unknown)=>playbackMark(event,props.media.id,detail);
+function painted(sourceTime=video.value?.currentTime??0,generation=props.playback.generation.value,staged=false){
+  renderOrder.didPaint();if(staged)channel.acknowledge(generation,sourceTime);
+  if(canvas.value){canvas.value.dataset.presentedTime=String(sourceTime);canvas.value.dataset.generation=String(generation);}
+  mark('tactile-paint',{generation,sourceTime,settingsRevision,staged,gain:gain.value,cleanup:cleanup.value});
+  if(!ready.value){ready.value=true;mark('tactile-first-frame');}
+}
+function paint(image:TactileImage,sourceTime=video.value?.currentTime??0,generation=props.playback.generation.value,staged=false){
+  if(disposed||!['frame','ready'].includes(state.value)||!canvas.value)return;
+  const context=canvas.value.getContext('2d')!;
+  if(image instanceof ImageData)context.putImageData(image,0,0);else context.drawImage(image,0,0);
+  painted(sourceTime,generation,staged);
+}
+function channelState(value:ChannelState){state.value=value;readyGeneration.value=value==='ready'?channel.generation:-1;if(value==='ready')mark('channel-ready',{generation:channel.generation});}
+function stageFrame(generation:number){
+  if(disposed)return;
+  if(!tactile){channel.acknowledge(generation,transport?.currentTime??0);return;}
   if(software.value){drawSoftwareDifference();return;}
-  if(touchRenderer&&video.value){touchRenderer.update(video.value,gain.value,cleanup.value);return;}
-  const v = software.value ? surface.value : video.value, c = canvas.value;
-  if (!v || !c || !reference || (!software.value && (v as HTMLVideoElement).readyState < 2) || !buffer || disposed) return;
-  if ((software.value ? (v as HTMLCanvasElement).width : (v as HTMLVideoElement).videoWidth) !== buffer.width || (software.value ? (v as HTMLCanvasElement).height : (v as HTMLVideoElement).videoHeight) !== buffer.height) { referenceError.value = true; return; }
-  try {
-    const context = buffer.getContext('2d', { willReadFrequently: true })!;
-    context.drawImage(v, 0, 0);
-    const pixels = context.getImageData(0, 0, buffer.width, buffer.height);
-    if (!output) output = context.createImageData(buffer.width, buffer.height);
-    (touchFilter??=new TactileFilter(buffer.width,buffer.height,reference)).render(pixels.data,output.data,gain.value,cleanup.value);
-    c.getContext('2d')!.putImageData(output, 0, 0);
-  } catch { referenceError.value = true; }
+  stageRequest={generation,settingsRevision};renderStagedFrame();
 }
-function callback(now: number) {
-  if (disposed || !video.value) return;
-  // Hidden source videos may not receive compositor frame callbacks. Sample the
-  // media clock independently; TactilePlayback still bounds work to one request.
-  if (!software.value && ready.value && video.value.currentTime !== lastTime && now - lastDraw >= 1000/Math.min(30,props.media.fps || 30)-2) {
-    draw(); lastDraw = now; lastTime = video.value.currentTime;
-  }
-  animationFrame = requestAnimationFrame(callback);
+function renderStagedFrame(){
+  if(stagePending||!stageRequest||disposed||!touchRenderer||!video.value)return;
+  const request=stageRequest;stageRequest=null;
+  if(request.generation!==props.playback.generation.value||request.settingsRevision!==settingsRevision)return;
+  const ticket=renderOrder.capture(),sourceTime=video.value.currentTime;
+  const accepts=()=>!disposed&&state.value==='frame'&&renderOrder.accepts(ticket)&&request.generation===props.playback.generation.value&&request.settingsRevision===settingsRevision;
+  stagePending=true;
+  void touchRenderer.render(video.value,gain.value,cleanup.value).then(image=>{
+    if(!image)return;
+    try{if(accepts())paint(image,sourceTime,request.generation,true);}finally{image.close();}
+  }).catch(()=>{if(accepts())rendererFailed();}).finally(()=>{stagePending=false;renderStagedFrame();});
 }
-async function loaded() {
-  const v = video.value;
-  if (!v || disposed) return;
-  if(software.value)return;opening.value=false;
-  if (props.media.kind !== 'tactile' || decoder || ready.value) return;
-  // Decode the first frame independently so opening/expanding/seeking never rebases touch.
-  const d = document.createElement('video'); decoder = d;
-  d.muted = true; d.preload = 'auto'; d.playsInline = true;
-  const cleanup = () => { clearTimeout(referenceTimeout); d.pause(); d.removeAttribute('src'); d.load(); if (decoder === d) decoder = null; };
-  referenceTimeout = window.setTimeout(() => { referenceError.value = true; cleanup(); }, 10000);
-  d.onerror = () => { referenceError.value = true; cleanup(); };
-  d.onloadeddata = async () => {
-    if (disposed) { cleanup(); return; }
-    try {
-      if(typeof OffscreenCanvas!=='undefined'&&typeof createImageBitmap==='function'){
-        touchRenderer=new TactileRenderer(image=>{if(canvas.value&&!disposed)canvas.value.getContext('2d')!.drawImage(image,0,0);},()=>{referenceError.value=true;});
-        const size=await touchRenderer.reference(d);if(disposed||software.value)return;
-        aspect.value=`${size.width} / ${size.height}`;
-        ready.value=true;await nextTick();if(canvas.value){canvas.value.width=size.width!;canvas.value.height=size.height!;}
-        draw();return;
-      }
-      buffer = document.createElement('canvas'); buffer.width = d.videoWidth; buffer.height = d.videoHeight;
-      const ctx = buffer.getContext('2d', { willReadFrequently: true })!;
-      ctx.drawImage(d, 0, 0); reference = ctx.getImageData(0, 0, buffer.width, buffer.height).data;
-      ready.value = true;
-      aspect.value = `${buffer.width} / ${buffer.height}`;
-      await nextTick();
-      if (canvas.value) { canvas.value.width = buffer.width; canvas.value.height = buffer.height; }
-      draw();
-    } catch { if(!disposed&&!software.value)referenceError.value = true; }
-    finally { cleanup(); }
-  };
-  d.src = props.url!;
+function automaticPaint(image:TactileImage,sourceTime?:number){
+  if(props.playback.revealed.value&&state.value==='ready')paint(image,sourceTime);
 }
-function drawSoftwareDifference(){
-  const frame=currentFrame,c=canvas.value;if(!frame||!c)return;
+function preparationFailed(){
+  if(disposed)return;
+  stageRequest=null;state.value='failure';if(!regionMissing.value)referenceError.value=true;
+  renderOrder.invalidate();calibrationAbort?.abort();touchRenderer?.dispose();
+  touchRenderer=null;currentFrame=null;reference=null;opening.value=false;
+}
+function rendererFailed(){props.playback.preparationFailed(channel);}
+function decoderFailed(error?:unknown){if(disposed)return;if(!tactile)failed.value=true;opening.value=false;props.playback.preparationFailed(channel);if(error)console.warn('Video decoder:',error);}
+function draw(){
+  if(!tactile||disposed||state.value!=='ready'||!props.playback.revealed.value)return;
+  try{if(software.value)drawSoftwareDifference();else if(touchRenderer&&video.value)touchRenderer.update(video.value,gain.value,cleanup.value);}catch{rendererFailed();}
+}
+function callback(now:number){
+  if(disposed)return;
+  if(!software.value&&state.value==='ready'&&video.value&&video.value.currentTime!==lastTime&&now-lastDraw>=1000/Math.min(30,props.media.fps||30)-2){draw();lastDraw=now;lastTime=video.value.currentTime;}
+  animationFrame=requestAnimationFrame(callback);
+}
+async function useModel(model:TactileBaseline,signal:AbortSignal){
+  signal.throwIfAborted();
+  reference=model;regionMissing.value=model.roiStatus==='not-found';aspect.value=`${model.width} / ${model.height}`;
+  await nextTick();if(disposed||signal.aborted)return;
+  if(canvas.value){canvas.value.width=model.width;canvas.value.height=model.height;const context=canvas.value.getContext('2d')!;context.fillStyle='#000';context.fillRect(0,0,model.width,model.height);}
+  if(regionMissing.value){ready.value=true;props.playback.preparationFailed(channel);}
+}
+async function loaded(){
+  if(!video.value||disposed||software.value)return;
+  clearTimeout(openingTimer);opening.value=false;
+  if(!tactile){if(!firstCamera){firstCamera=true;mark('camera-first-frame');}props.playback.prepared(channel);return;}
+  if(calibrationAbort||!transport)return;
+  const abort=new AbortController();calibrationAbort=abort;
+  const key=calibrationKey(pixelMode()?'native-rgba':'native-bitmap',props.media.fps,props.timing.media.length);
+  mark('calibration-queued');
+  try{
+    await props.playback.prepareTactile(async()=>{
+      // Allocate calibration resources only when this job has a slot.
+      const renderer=new TactileRenderer(automaticPaint,rendererFailed,pixelMode());touchRenderer=renderer;
+      abort.signal.addEventListener('abort',()=>renderer.dispose(),{once:true});
+      const cached=props.blob&&tactileCache.get(props.blob,key);
+      mark(cached?'calibration-cache-hit':'calibration-start');
+      const timer=setTimeout(()=>abort.abort(new Error('Baseline preparation timed out')),30000);
+      try{
+        let model:TactileBaseline;
+        if(cached){await renderer.reference(cached);model=cached;}
+        else{
+          await collectNativeBaseline(props.url!,props.timing.media,props.media.duration,props.media.fps,async source=>{await renderer.sample(source);},abort.signal);
+          model=await renderer.calibrated();abort.signal.throwIfAborted();
+          if(props.blob)tactileCache.put(props.blob,key,model);
+        }
+        abort.signal.throwIfAborted();mark('calibration-complete',{cached:!!cached});await useModel(model,abort.signal);
+      }finally{clearTimeout(timer);}
+    },abort.signal);
+    abort.signal.throwIfAborted();if(!disposed&&!regionMissing.value)props.playback.prepared(channel);
+  }catch{if(!disposed&&!software.value){props.playback.preparationFailed(channel);touchRenderer?.dispose();touchRenderer=null;}}
+}
+function paintDifference(frame:DecodedFrame,generation:number,staged:boolean){
+  const c=canvas.value;if(!c)return;
   if(c.width!==frame.width||c.height!==frame.height){c.width=frame.width;c.height=frame.height;}
   const ctx=c.getContext('2d')!;
-  if(frame.gain===gain.value && frame.cleanup===cleanup.value && frame.differenceImage?.width){ctx.drawImage(frame.differenceImage,0,0);return;}
-  if(frame.gain===gain.value && frame.cleanup===cleanup.value && frame.difference){ctx.putImageData(new ImageData(new Uint8ClampedArray(frame.difference),frame.width,frame.height),0,0);return;}
-  // Buffered frames can briefly retain previous settings. Coalesce their redraws
-  // in a worker too, including settings changed while the video is paused.
-  if(!reference||!surface.value)return;
-  if(typeof OffscreenCanvas!=='undefined'&&typeof createImageBitmap==='function'){
+  if(frame.differenceImage?.width)ctx.drawImage(frame.differenceImage,0,0);
+  else if(frame.difference)ctx.putImageData(new ImageData(new Uint8ClampedArray(frame.difference),frame.width,frame.height),0,0);
+  else throw new Error('No tactile response frame');
+  painted(frame.time,generation,staged);
+}
+function drawSoftwareDifference(){
+  try{
+    const frame=currentFrame,player=transport;
+    if(!frame||!canvas.value||!['frame','ready'].includes(state.value))return;
+    if(frame.gain===gain.value&&frame.cleanup===cleanup.value){paintDifference(frame,props.playback.generation.value,state.value==='frame');return;}
+    if(!(player instanceof SoftwareTransport)||!frame.gray)return;
     if(settingsPending){settingsRequested=true;return;}
-    if(!settingsRenderer){
-      settingsRenderer=new TactileRenderer(()=>{},()=>{if(!disposed)referenceError.value=true;});
-      settingsReady=settingsRenderer.reference(new ImageData(reference.slice(),frame.width,frame.height));
-    }
     settingsPending=true;settingsRequested=false;
-    const generation=settingsGeneration, frameGain=gain.value, frameCleanup=cleanup.value;
-    void settingsReady!.then(()=>{
-      if(disposed||currentFrame!==frame)return;
-      return settingsRenderer!.render(surface.value!,frameGain,frameCleanup);
-    }).then(image=>{
-      if(!image)return;
-      try{if(!disposed&&currentFrame===frame&&generation===settingsGeneration)ctx.drawImage(image,0,0);}
-      finally{image.close();}
-    }).catch(()=>{if(!disposed&&generation===settingsGeneration)referenceError.value=true;}).finally(()=>{
-      settingsPending=false;if(settingsRequested&&!disposed)drawSoftwareDifference();
-    });
-    return;
-  }
-  // Compatibility fallback for browsers without offscreen bitmap processing.
-  buffer??=document.createElement('canvas');
-  if(buffer.width!==frame.width||buffer.height!==frame.height){buffer.width=frame.width;buffer.height=frame.height;}
-  const read=buffer.getContext('2d',{willReadFrequently:true})!;read.drawImage(surface.value,0,0);
-  const current=read.getImageData(0,0,frame.width,frame.height);
-  if(!output||output.width!==frame.width||output.height!==frame.height)output=new ImageData(frame.width,frame.height);
-  (touchFilter??=new TactileFilter(frame.width,frame.height,reference)).render(current.data,output.data,gain.value,cleanup.value);ctx.putImageData(output,0,0);
+    const ticket=renderOrder.capture(),frameGain=gain.value,frameCleanup=cleanup.value,frameGeneration=props.playback.generation.value,frameSettings=settingsRevision;
+    void player.redraw(frame,frameGain,frameCleanup).then(rendered=>{
+      try{if(!disposed&&renderOrder.accepts(ticket)&&frameSettings===settingsRevision&&frameGeneration===props.playback.generation.value)paintDifference(rendered,frameGeneration,state.value==='frame');}
+      finally{closeFrame(rendered);}
+    }).catch(()=>{if(!disposed&&renderOrder.accepts(ticket))rendererFailed();}).finally(()=>{settingsPending=false;if(settingsRequested&&!disposed)drawSoftwareDifference();});
+  }catch{rendererFailed();}
 }
 function decoded(frame:DecodedFrame){
-  if(disposed||!surface.value)return;
-  currentFrame=frame;if(frame.reference){reference=new Uint8ClampedArray(frame.reference);touchFilter=null;}
+  if(disposed)return;
+  currentFrame=frame;if(frame.reference)reference=frame.reference;
   aspect.value=`${frame.width} / ${frame.height}`;
-  const c=surface.value;if(c.width!==frame.width||c.height!==frame.height){c.width=frame.width;c.height=frame.height;}
+  opening.value=false;
+  if(tactile){drawSoftwareDifference();return;}
+  const c=surface.value;if(!c)return;if(c.width!==frame.width||c.height!==frame.height){c.width=frame.width;c.height=frame.height;}
+  // Transfer the decoded source without an extra per-frame canvas copy. Paused
+  // settings redraws capture this surface, so the queue need not own its bitmap.
   const bitmapContext=frame.image?c.getContext('bitmaprenderer'):null;
   if(frame.image&&bitmapContext)bitmapContext.transferFromImageBitmap(frame.image);
   else if(frame.image)c.getContext('2d')!.drawImage(frame.image,0,0);
   else if(frame.pixels)c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(frame.pixels),frame.width,frame.height),0,0);
   c.dataset.presentedTime=String(frame.time);opening.value=false;
-  if(props.media.kind==='tactile'){ready.value=!!(frame.differenceImage||frame.difference);drawSoftwareDifference();}
+  if(!firstCamera){firstCamera=true;mark('camera-first-frame');}
 }
-function fallback(){
-  if(disposed||software.value||props.media.failed)return;
-  transport?.dispose();touchRenderer?.dispose();touchRenderer=null;referenceError.value=false;software.value=true;opening.value=true;failed.value=false;
-  if(!props.blob){failed.value=true;opening.value=false;return;}
-  try{transport=new SoftwareTransport(props.blob,props.timing.media,props.media.fps,decoded,error=>{failed.value=true;opening.value=false;console.warn('Video decoder:',error);},props.media.kind==='tactile');
-    if(transport instanceof SoftwareTransport){transport.setGain(gain.value);transport.setCleanup(cleanup.value);}
-    props.playback.register(props.media,props.timing,transport,()=>{failed.value=true;opening.value=false;});
-  }catch{failed.value=true;opening.value=false;}
+function fallback(initial=false){
+  if(disposed||(software.value&&!initial)||props.media.failed||state.value==='failure')return;
+  clearTimeout(openingTimer);renderOrder.invalidate();
+  if(!initial)props.playback.replace(channel);
+  calibrationAbort?.abort();transport?.dispose();touchRenderer?.dispose();touchRenderer=null;reference=null;ready.value=false;referenceError.value=false;regionMissing.value=false;software.value=true;opening.value=true;failed.value=false;
+  state.value='preparing';
+  if(!props.blob){failed.value=true;opening.value=false;props.playback.preparationFailed(channel);return;}
+  const abort=new AbortController();calibrationAbort=abort;
+  const start=async()=>{
+    abort.signal.throwIfAborted();
+    const key=calibrationKey('libav-rgba',props.media.fps,props.timing.media.length),cached=tactile?tactileCache.get(props.blob!,key):undefined;
+    if(tactile)mark(cached?'calibration-cache-hit':'calibration-start');
+    const player=new SoftwareTransport(props.blob!,props.timing.media,props.media.fps,decoded,decoderFailed,tactile,cached,metrics=>mark('decoder-metrics',metrics));transport=player;
+    abort.signal.addEventListener('abort',()=>player.dispose(),{once:true});
+    player.setGain(gain.value);player.setCleanup(cleanup.value);
+    props.playback.register(channel,player);
+    await player.initialized;abort.signal.throwIfAborted();
+    if(!tactile)props.playback.prepared(channel);
+    if(tactile){const model=player.reference!;if(!cached)tactileCache.put(props.blob!,key,model);mark('calibration-complete',{cached:!!cached});await useModel(model,abort.signal);if(!regionMissing.value&&!abort.signal.aborted)props.playback.prepared(channel);}
+  };
+  if(tactile)mark('calibration-queued');
+  void (tactile?props.playback.prepareTactile(start,abort.signal):start()).catch(error=>{if(!disposed&&!abort.signal.aborted)decoderFailed(error);});
 }
 onMounted(()=>{
-  if(failed.value){opening.value=false;return;}
-  const v=video.value;if(!v)return;
-  if(props.media.kind==='tactile')animationFrame=requestAnimationFrame(callback);
-  if(new URLSearchParams(location.search).has('software') || (props.media.codec&&!v.canPlayType('video/mp4; codecs="'+props.media.codec+'"'))){fallback();return;}
-  transport=new NativeTransport(v);props.playback.register(props.media,props.timing,transport,()=>{failed.value=true;opening.value=false;});
+  props.playback.bind(channel,tactile?preparationFailed:decoderFailed,channelState,stageFrame);
+  if(failed.value){opening.value=false;props.playback.preparationFailed(channel);return;}
+  if(software.value){fallback(true);return;}
+  const v=video.value;if(!v){props.playback.preparationFailed(channel);return;}
+  openingTimer=setTimeout(()=>{if(!disposed&&opening.value)decoderFailed(new Error('Video opening timed out'));},30000);
+  if(tactile)animationFrame=requestAnimationFrame(callback);
+  if(new URLSearchParams(location.search).has('software')||(props.media.codec&&!v.canPlayType('video/mp4; codecs="'+props.media.codec+'"'))){fallback();return;}
+  transport=new NativeTransport(v);props.playback.register(channel,transport);
   if(v.error)fallback();else if(v.readyState>=2)void loaded();
 });
-watch([gain,cleanup],()=>{settingsGeneration++;if(transport instanceof SoftwareTransport){transport.setGain(gain.value);transport.setCleanup(cleanup.value);}draw();});
-onBeforeUnmount(() => {
-  disposed = true;transport?.dispose();touchRenderer?.dispose();settingsRenderer?.dispose();
-  clearTimeout(referenceTimeout);
-  cancelAnimationFrame(animationFrame);
-  props.playback.unregister(props.media.id);
-  if (video.value) { video.value.pause(); video.value.removeAttribute('src'); video.value.load(); }
-  if (decoder) { decoder.onloadeddata = null; decoder.onerror = null; decoder.pause(); decoder.removeAttribute('src'); decoder.load(); }
-  reference = null; buffer = null; output = null;currentFrame=null;
+watch([gain,cleanup],()=>{settingsRevision++;renderOrder.invalidate();props.playback.redraw();if(transport instanceof SoftwareTransport){transport.setGain(gain.value);transport.setCleanup(cleanup.value);}draw();});
+watch(()=>props.playback.generation.value,()=>{stageRequest=null;renderOrder.invalidate();touchRenderer?.suspend();if(software.value)currentFrame=null;},{flush:'sync'});
+watch(()=>props.playback.revealed.value,value=>{if(value)draw();});
+onBeforeUnmount(()=>{
+  disposed=true;stageRequest=null;clearTimeout(openingTimer);renderOrder.invalidate();calibrationAbort?.abort();transport?.dispose();touchRenderer?.dispose();cancelAnimationFrame(animationFrame);props.playback.unregister(channel);
+  if(video.value){video.value.pause();video.value.removeAttribute('src');video.value.load();}
+  reference=null;currentFrame=null;
 });
 </script>
 
 <template>
-  <article class="media-card" :class="{ 'tactile-card': media.kind === 'tactile', inactive: outside }" :data-channel="media.id" :data-mode="software ? 'software' : 'native'">
+  <article class="media-card" :class="{ 'tactile-card': media.kind === 'tactile', inactive: outside }" :data-channel="media.id" :data-preparation="state" :data-generation="playback.generation.value" :data-ready-generation="readyGeneration" :data-revealed="playback.revealed.value" :data-mode="software ? 'software' : 'native'">
     <header class="panel-heading"><span><i class="channel-dot" :class="media.id.startsWith('r_') ? 'right' : media.id.startsWith('l_') ? 'left' : ''"></i>{{ channelName(media.id) }}</span><button class="icon-button" :title="t('expand')" :aria-label="t('expand') + ': ' + channelName(media.id)" @click="$emit('expand')"><Maximize2 :size="15" /></button></header>
     <div class="media-images" :style="media.kind === 'tactile' ? { '--response-aspect': aspect } : undefined">
       <div class="image-cell" :class="{ 'tactile-source': media.kind === 'tactile' }" :aria-hidden="media.kind === 'tactile' ? true : undefined">
-        <video v-if="url && !software && !media.failed" ref="video" :src="url" muted playsinline preload="auto" @loadeddata="loaded" @seeked="draw" @timeupdate="draw" @error="fallback" :aria-label="channelName(media.id)"></video>
+        <video v-if="url && !software && !media.failed" ref="video" :src="url" muted playsinline preload="auto" @loadeddata="loaded" @seeked="draw" @timeupdate="draw" @error="fallback()" :aria-label="channelName(media.id)"></video>
         <canvas ref="surface" v-show="software" class="software-video" :aria-label="channelName(media.id)"></canvas>
-        <div v-if="opening && !failed" class="media-message"><span>{{ t('decoding') }}</span></div>
+        <div v-if="!tactile && !playback.revealed.value && !failed" class="media-message joint-preparation"><span>{{ t(state==='ready' ? 'waitingTogether' : 'preparingTogether') }}</span></div>
         <div v-if="failed" class="media-message"><AlertCircle :size="20" /><span>{{ t(url ? 'failed' : 'missingMedia') }}</span></div>
       </div>
       <div v-if="media.kind === 'tactile'" class="image-cell difference-cell">
         <canvas ref="canvas" :aria-label="t('difference')"></canvas>
         <div v-if="failed" class="media-message"><AlertCircle :size="20" /><span>{{ t(url ? 'failed' : 'missingMedia') }}</span></div>
-        <div v-else-if="!ready || referenceError" class="media-message"><span>{{ t(referenceError ? 'referenceFailed' : opening ? 'decoding' : 'referenceLoading') }}</span></div>
+        <div v-else-if="referenceError || (!regionMissing && (!ready || !playback.revealed.value))" class="media-message joint-preparation"><span>{{ t(referenceError ? 'referenceFailed' : state === 'preparing' ? 'referenceLoading' : state === 'ready' ? 'waitingTogether' : 'referenceJoining') }}</span></div>
+        <div v-else-if="regionMissing" class="media-message region-missing" role="status"><span>{{ t('regionMissing') }}</span></div>
       </div>
       <span v-if="outside && !failed" class="interval-label">{{ t('outside') }}</span>
     </div>

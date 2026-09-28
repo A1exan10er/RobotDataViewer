@@ -79,6 +79,8 @@ try:
         postMessage(data,...args){this.sent.set(data.id,{at:performance.now(),method:data.method});return super.postMessage(data,...args);}
       };
     """)
+    if args.tactile_clean_check:
+        evaluate((Path(__file__).resolve().parents[1]/'tools'/'tactile-browser-probe.js').read_text())
     selector = 'input[webkitdirectory]' if Path(args.source).is_dir() else 'input[accept]'
     element = command('/element', {'using': 'css selector', 'value': selector})['element-6066-11e4-a52e-4f735466cecf']
     if Path(args.source).is_dir():
@@ -130,23 +132,17 @@ try:
         assert evaluate("return [...document.querySelectorAll('.tactile-card input[type=checkbox]')].every(c=>!c.checked)")
         filter_code=(Path(__file__).resolve().parents[1]/'vendor'/'tactile-filter.js').read_text()
         evaluate("{"+filter_code+";window.__Filter=TactileFilter;}")
-        evaluate("""
-          window.__pixels=source=>{const c=document.createElement('canvas');c.width=source.videoWidth||source.width;c.height=source.videoHeight||source.height;c.getContext('2d').drawImage(source,0,0);return c.getContext('2d').getImageData(0,0,c.width,c.height).data;};
-          window.__filters=[...document.querySelectorAll('.tactile-card')].map(c=>{const v=c.querySelector('video');return new window.__Filter(v.videoWidth,v.videoHeight,window.__pixels(v));});
-          window.__check=()=>[...document.querySelectorAll('.tactile-card')].map((c,k)=>{const current=window.__pixels(c.querySelector('video')),actual=window.__pixels(c.querySelector('.difference-cell canvas')),expected=new Uint8ClampedArray(actual.length);window.__filters[k].render(current,expected,Number(c.querySelector('input[type=range]').value),!c.querySelector('input[type=checkbox]').checked);let changed=0,dark=0,errors=0;for(let i=0;i<actual.length;i+=4){if(Math.min(actual[i],actual[i+1],actual[i+2])<255)changed++;if(Math.min(actual[i],actual[i+1],actual[i+2])<175)dark++;for(let j=0;j<4;j++)if(actual[i+j]!==expected[i+j])errors++;}return {id:c.dataset.channel,changed,dark,errors};});
-        """)
+        evaluate('window.__installTactileCheck(window.__Filter)')
         def seek_cleanup(ms):
             evaluate("{const t=document.querySelector('.timeline');t.value="+str(ms)+";t.dispatchEvent(new Event('input',{bubbles:true}));}")
             wait("!document.querySelector('.playback-bar .spin') && !document.querySelector('.media-message')")
-            wait("window.__check().every(c=>c.errors===0)",10)
+            wait("window.__check().every(c=>c.errors===0 && c.outside===0 && c.roiStatus==='ready')",10)
         seek_cleanup(2000)
         clean=evaluate("return window.__check()")
-        assert all(c['changed']==0 for c in clean), clean
+        assert all(c['errors']==0 for c in clean), clean
         seek_cleanup(18800 if args.task=='capping' else 10000)
         contact=evaluate("return window.__check()")
-        assert all(c['dark']>100 for c in contact if (c['id']=='l_tact_r' if args.task=='capping' else c['id'].startswith('l_'))), contact
-        if args.task=='capping':
-            assert all(c['changed']==0 for c in contact if c['id'].startswith('r_')),contact
+        assert all(c['strong']>100 for c in contact if (c['id']=='l_tact_r' if args.task=='capping' else c['id'].startswith('l_'))), contact
         evaluate("document.querySelector('[data-channel=l_tact_r] .icon-button').click()")
         assert evaluate("return getComputedStyle(document.querySelector('.expanded-panel .tactile-source')).display==='none'")
         (out / (args.label + '-contact.png')).write_bytes(base64.b64decode(command('/screenshot', method='GET')))
@@ -155,13 +151,13 @@ try:
         wait("window.__check().every(c=>c.errors===0)",10)
         seek_cleanup(2000)
         unfiltered=evaluate("return window.__check()")
-        assert all(c['changed']>100000 for c in unfiltered), unfiltered
+        assert all(c['changed']>=clean[i]['changed'] for i,c in enumerate(unfiltered)), unfiltered
         evaluate("[...document.querySelectorAll('.tactile-card input[type=checkbox]')].forEach(c=>c.click())")
         wait("window.__check().every(c=>c.errors===0)",10)
-        assert all(c['changed']==0 for c in evaluate("return window.__check()"))
+        assert all(c['errors']==0 for c in evaluate("return window.__check()"))
         seek_cleanup(18800 if args.task=='capping' else 10000)
         first=evaluate("return Array.from(window.__pixels(document.querySelector('[data-channel=l_tact_r] .difference-cell canvas')))")
-        for gain in (1,16,8):
+        for gain in (1,16,10):
             evaluate("{const g=document.querySelector('[data-channel=l_tact_r] input[type=range]');g.value="+str(gain)+";g.dispatchEvent(new Event('input',{bubbles:true}));}")
             wait("window.__check().every(c=>c.errors===0)")
         for name in ('Next frame','Previous frame'):
@@ -172,7 +168,7 @@ try:
         assert evaluate("return Array.from(window.__pixels(document.querySelector('[data-channel=l_tact_r] .difference-cell canvas')))")==first
         seek_cleanup(0)
         (out / (args.label + '-cleanup.json')).write_text(json.dumps({'clean':clean,'contact':contact,'unfiltered':unfiltered},indent=2))
-        print('Native tactile cleanup, unfiltered parity and fixed reference checks passed', flush=True)
+        print('Native tactile cleanup, unfiltered parity and fixed baseline checks passed', flush=True)
     evaluate("""
       window.__samples=[];window.__batches=[];window.__events=[];window.__capturing=true;
       for(const video of document.querySelectorAll('.media-card video')){const tick=(_,frame)=>{video.dataset.presentedTime=frame.mediaTime;if(window.__capturing)video.requestVideoFrameCallback(tick);};video.requestVideoFrameCallback(tick);}

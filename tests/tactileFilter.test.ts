@@ -1,72 +1,88 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TactileFilter } from '../src/tactileFilter.ts';
+import { readFileSync } from 'node:fs';
+import { TactileFilter, TactileCalibration, tactileGray, tactileBaselineCount } from '../src/tactileFilter.ts';
 
-const width=640,height=360;
-function reference(w=width,h=height) { const a=new Uint8ClampedArray(w*h*4);for(let i=0;i<a.length;i+=4){a[i]=a[i+1]=a[i+2]=110;a[i+3]=255;}return a; }
-function noise() { const a=reference();let seed=789;for(let i=0;i<a.length;i+=4)for(let c=0;c<3;c++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;a[i+c]+=seed%9-4;}return a; }
-function patch(a:Uint8ClampedArray,x0:number,y0:number,w:number,h:number,amount=25) { for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++){const i=(y*width+x)*4;a[i]+=amount;a[i+1]-=amount;} }
-function darkness(a:Uint8ClampedArray,x:number,y:number) { const i=(y*width+x)*4;return 255-Math.min(a[i],a[i+1],a[i+2]); }
+function frame(w:number,h:number,value=100){const a=new Uint8ClampedArray(w*h*4);for(let i=0;i<a.length;i+=4){a[i]=a[i+1]=a[i+2]=value;a[i+3]=255;}return a;}
+// Filter-only numerical goldens use an explicit all-valid region; runtime
+// calibration never substitutes this for a failed detection.
+function allowAll(m:ReturnType<TactileCalibration['finish']>){m.roiMask.fill(1);m.roiStatus='ready';return m;}
+function model(w=41,h=25){const c=new TactileCalibration(w,h);for(const n of [96,104,99,101,100,102,98,100])c.add(frame(w,h,n));return allowAll(c.finish());}
+function isBlack(out:Uint8ClampedArray){return out.every((v,i)=>v===(i%4===3?255:0));}
+const bytes=(s:string)=>new Uint8ClampedArray(Buffer.from(s,'base64'));
 
-test('background fluctuations and isolated bright pixels stay exactly white even at 16x',()=>{
-  const ref=reference(),current=noise(),out=new Uint8ClampedArray(ref.length);
-  for(let y=8;y<height;y+=32)for(let x=8;x<width;x+=32){const i=(y*width+x)*4;current[i]=255;current[i+1]=0;}
-  new TactileFilter(width,height,ref).render(current,out,16);
-  assert.ok(out.every(v=>v===255));
-});
-test('concentrated color changes remain strong while unrelated background stays white',()=>{
-  const ref=reference(),current=noise(),out=new Uint8ClampedArray(ref.length);
-  patch(current,200,100,60,45);patch(current,400,180,24,32,18);
-  new TactileFilter(width,height,ref).render(current,out,8);
-  assert.ok(darkness(out,225,120)>150);assert.ok(darkness(out,412,195)>100);
-  assert.equal(darkness(out,100,100),0);assert.equal(darkness(out,350,150),0);
-});
-test('held contact, release and seek order do not adapt or contaminate the fixed reference',()=>{
-  const ref=reference(),original=ref.slice(),current=noise();patch(current,180,110,70,45);
-  const currentCopy=current.slice(),filter=new TactileFilter(width,height,ref),out=new Uint8ClampedArray(ref.length);
-  filter.render(current,out);const first=out.slice();
-  for(let i=0;i<5;i++)filter.render(current,out);
-  assert.deepEqual(out,first);filter.render(noise(),out);assert.ok(out.every(v=>v===255));
-  filter.render(current,out);assert.deepEqual(out,first);assert.deepEqual(ref,original);assert.deepEqual(current,currentCopy);
-});
-test('gain changes color strength without admitting noise; Show all changes bypasses the mask',()=>{
-  const ref=reference(),current=noise();patch(current,160,80,70,45);
-  const filter=new TactileFilter(width,height,ref),low=new Uint8ClampedArray(ref.length),high=low.slice();
-  filter.render(current,low,1);filter.render(current,high,16);
-  assert.equal(darkness(low,100,100),0);assert.equal(darkness(high,100,100),0);
-  assert.ok(darkness(high,185,100)>darkness(low,185,100));
-  filter.render(current,high,8,false);assert.ok(darkness(high,100,100)>0);
-  filter.render(ref,high,8,false);assert.ok(high.every(v=>v===255));
-  filter.render(current,high,1);assert.deepEqual(high,low);
-});
-test('broad strong changes survive adaptive thresholds, including odd frame sizes',()=>{
-  const w=163,h=97,ref=reference(w,h),current=ref.slice(),out=ref.slice();
-  for(let i=0;i<current.length;i+=4){current[i]+=40;current[i+1]-=40;}
-  new TactileFilter(w,h,ref).render(current,out,8);
-  for(let i=0;i<out.length;i+=4){assert.ok(out[i]>out[i+1]&&out[i+1]>out[i+2]);assert.ok(out[i+1]<60);assert.equal(out[i+3],255);}
-  assert.throws(()=>new TactileFilter(w,h,new Uint8ClampedArray(4)));
-  assert.throws(()=>new TactileFilter(w,h,ref).render(new Uint8ClampedArray(4),out));
-});
-test('many weak coherent changes survive without a strong center',()=>{
-  const ref=reference(),current=noise(),out=ref.slice();
-  patch(current,210,90,100,65,5);
-  new TactileFilter(width,height,ref).render(current,out);
-  assert.ok(darkness(out,260,120)>150);
-  assert.equal(darkness(out,150,80),0);
-});
-test('small whole-image drift is background, and gain does not change the detected region',()=>{
-  const ref=reference(),current=ref.slice(),out=ref.slice();
-  for(let i=0;i<current.length;i+=4)current[i]+=5;
-  const filter=new TactileFilter(width,height,ref);filter.render(current,out,16);
-  assert.ok(out.every(v=>v===255));
-  patch(current,100,100,85,60,7);filter.render(current,out,1);const low=out.slice();filter.render(current,out,16);
-  for(let i=0;i<out.length;i+=4)assert.equal(out[i+2]===255,low[i+2]===255);
-});
-test('response orientation and aspect follow portrait and tiny recordings',()=>{
-  for(const [w,h] of [[90,160],[7,3]]){
-    const ref=reference(w,h),current=ref.slice(),out=ref.slice();
-    for(let y=0;y<Math.ceil(h/2);y++)for(let x=0;x<w;x++)current[(y*w+x)*4]+=35;
-    new TactileFilter(w,h,ref).render(current,out);
-    assert.ok(out[2]<100);assert.equal(out.length,w*h*4);assert.equal(out.at(-1),255);
+test('NumPy/OpenCV goldens match grayscale, median, percentile, Gaussian borders and Inferno',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('fixtures/tactile-reference.json',import.meta.url),'utf8'));
+  for(const f of fixture.cases){
+    const calibration=new TactileCalibration(f.width,f.height);
+    for(const encoded of f.frames)calibration.add(bytes(encoded));
+    const baseline=calibration.finish();
+    assert.deepEqual([...baseline.baseline],[...bytes(f.baseline)]);
+    const expectedNoise=bytes(f.noiseFloor),view=new DataView(expectedNoise.buffer);
+    for(let p=0;p<baseline.noiseFloor.length;p++)assert.equal(baseline.noiseFloor[p],view.getFloat32(p*4,true));
+    const current=bytes(f.current),copy=current.slice();
+    assert.deepEqual([...tactileGray(current)],[...bytes(f.gray)]);
+    const filter=new TactileFilter(allowAll(baseline)),output=new Uint8ClampedArray(current.length);
+    for(const r of f.renders){
+      filter.render(current,output,r.gain,r.cleanup);
+      const expected=bytes(r.output);
+      // Float32 SIMD accumulation may move a value across one 8-bit quantization bin.
+      const max=Math.max(...output.map((v,i)=>Math.abs(v-expected[i])));
+      assert.ok(max<=3,`OpenCV parity ${f.width}x${f.height}, gain ${r.gain}, cleanup ${r.cleanup}: ${max}`);
+      for(let p=3;p<output.length;p+=4)assert.equal(output[p],255);
+    }
+    assert.deepEqual(current,copy);
   }
+});
+test('baseline length follows the reference, including ties-to-even and short clips',()=>{
+  assert.equal(tactileBaselineCount(30,100),60);assert.equal(tactileBaselineCount(29.97,100),60);
+  assert.equal(tactileBaselineCount(30.25,100),60);assert.equal(tactileBaselineCount(30.75,100),62);
+  assert.equal(tactileBaselineCount(1,20),8);assert.equal(tactileBaselineCount(30,3),3);
+  assert.equal(tactileBaselineCount(NaN,100),60);assert.equal(tactileBaselineCount(30,0),0);
+});
+test('calibrated background is opaque black at all gains; Show all changes exposes noise',()=>{
+  const baseline=model(),filter=new TactileFilter(baseline),current=frame(41,25,104),out=current.slice();
+  for(const gain of [1,10,16]){filter.render(current,out,gain);assert.ok(isBlack(out));}
+  filter.render(current,out,10,false);assert.ok(!isBlack(out));
+  filter.render(frame(41,25),out,10,false);assert.ok(isBlack(out));
+});
+test('weak, strong and held responses remain deterministic through settings and seek order',()=>{
+  const baseline=model(),original=baseline.baseline.slice(),noise=baseline.noiseFloor.slice();
+  const filter=new TactileFilter(baseline),out=frame(41,25),contact=frame(41,25,108);
+  filter.render(contact,out);assert.ok(!isBlack(out));const weak=out.slice();
+  for(let i=0;i<4;i++){filter.render(frame(41,25),out);assert.ok(isBlack(out));filter.render(frame(41,25,130),out,16);filter.render(contact,out);assert.deepEqual(out,weak);}
+  filter.render(contact,out,1);assert.notDeepEqual(out,weak);filter.render(contact,out);assert.deepEqual(out,weak);
+  assert.deepEqual(baseline.baseline,original);assert.deepEqual(baseline.noiseFloor,noise);
+});
+test('calibration copies inputs, releases frames, handles one-frame clips and rejects bad dimensions',()=>{
+  const c=new TactileCalibration(1,1),a=frame(1,1,42);c.add(a);a[0]=255;
+  const baseline=c.finish();assert.equal(baseline.baseline[0],42);assert.equal(baseline.noiseFloor[0],0);
+  assert.throws(()=>c.finish());assert.throws(()=>new TactileCalibration(0,1));
+  assert.throws(()=>c.add(frame(2,1)));assert.throws(()=>new TactileFilter({...baseline,width:2}));
+  assert.throws(()=>new TactileFilter(baseline).render(frame(2,1),frame(2,1)));
+});
+test('portrait orientation, tiny images and saturation follow the recorded pixels',()=>{
+  for(const [w,h] of [[9,17],[1,1],[1,9],[7,3]]){
+    const baseline=model(w,h),current=frame(w,h),out=current.slice();
+    for(let y=0;y<Math.ceil(h/2);y++)for(let x=0;x<w;x++)for(let c=0;c<3;c++)current[(y*w+x)*4+c]=255;
+    new TactileFilter(baseline).render(current,out,16,false);
+    assert.deepEqual([...out.slice(0,4)],[252,255,164,255]);
+    if(h>1)assert.deepEqual([...out.slice(-4)],[0,0,0,255]);
+  }
+});
+test('the post-gamma cutoff suppresses values below 10 without suppressing the next bin',()=>{
+  const baseline=model(1,1),out=frame(1,1),current=frame(1,1,112);
+  baseline.noiseFloor[0]=9.79;new TactileFilter(baseline).render(current,out);assert.ok(isBlack(out));
+  baseline.noiseFloor[0]=9.69;new TactileFilter(baseline).render(current,out);assert.ok(!isBlack(out));
+  new TactileFilter(baseline).render(frame(1,1,101),out,1,false);assert.ok(!isBlack(out));
+});
+
+test('grayscale calibration and rendering match RGBA exactly without changing input',()=>{
+  const w=41,h=23,frames=Array.from({length:8},(_,f)=>Uint8ClampedArray.from({length:w*h*4},(_,i)=>i%4===3?255:(i*17+f*3)%256));
+  const rgbaCalibration=new TactileCalibration(w,h),grayCalibration=new TactileCalibration(w,h);
+  for(const rgba of frames){rgbaCalibration.add(rgba);const gray=tactileGray(rgba);grayCalibration.addGray(gray);gray.fill(255);}
+  const a=allowAll(rgbaCalibration.finish()),b=allowAll(grayCalibration.finish());assert.deepEqual(a,b);
+  const filter=new TactileFilter(a),out=new Uint8ClampedArray(w*h*4),expected=new Uint8ClampedArray(out.length);
+  const rgba=frames[3],gray=tactileGray(rgba),original=gray.slice();
+  for(const gain of [1,10,16])for(const cleanup of [true,false]){filter.render(rgba,expected,gain,cleanup);filter.renderGray(gray,out,gain,cleanup);assert.deepEqual(out,expected);assert.deepEqual(gray,original);}
 });

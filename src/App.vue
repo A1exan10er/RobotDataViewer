@@ -4,6 +4,10 @@ import { Aperture, ArrowUpRight, FolderOpen, Search, PanelLeftClose, PanelLeftOp
 import { language, t, channelName, type Word } from './i18n';
 import { openRecording, type RecordingSource } from './source';
 import { usePlayback } from './playback';
+import { tactileCache } from './tactileCache';
+import { playbackMark } from './playbackMetrics';
+import { probeMovie } from './mp4';
+import { version as appVersion } from '../package.json';
 import { timeText } from './math';
 import type { Episode, EpisodeData } from './types';
 import MediaPanel from './components/MediaPanel.vue';
@@ -14,7 +18,7 @@ const samplePackage = shallowRef<RecordingSource | null>(null), active = shallow
 const urls = shallowRef<Record<string,string>>({}), input = ref<HTMLInputElement | null>(null), archiveInput = ref<HTMLInputElement | null>(null);
 const query = ref(''), sidebar = ref(true), expanded = ref(''), loading = ref(false), error = ref<Word | null>(null), showInfo = ref(false), showHelp = ref(false);
 const controller = usePlayback();
-const { time, duration, playing, busy, rate } = controller;
+const { time, duration, playing, busy, rate, preparing, preparedCount, channelCount } = controller;
 let generation = 0, ownedUrls: string[] = [];
 let loadAbort = new AbortController(), openAbort = new AbortController();
 let beforeExpand: HTMLElement | null = null;
@@ -25,6 +29,7 @@ const estimated = computed(()=>Object.values(data.value?.timings || {}).some(t=>
 const hasMotion = computed(()=>!!data.value?.trajectories.length);
 function revoke() { ownedUrls.forEach(url=>URL.revokeObjectURL(url)); ownedUrls=[]; urls.value={}; }
 async function selectEpisode(ep: Episode) {
+  playbackMark('episode-selection',ep.id);
   loadAbort.abort(); loadAbort=new AbortController();
   const version=++generation;
   controller.reset(); expanded.value=''; showInfo.value=false; loading.value=true; error.value=null;
@@ -33,10 +38,19 @@ async function selectEpisode(ep: Episode) {
   try {
     const parsed=await samplePackage.value!.data(ep.data,loadAbort.signal);
     if(version!==generation)return;
+    // Prepared v1 packages predate codec metadata. Probe only their selected
+    // tactile tracks so they also use sequential decoding without format changes.
+    const source=samplePackage.value!,signal=loadAbort.signal;
+    await Promise.all(ep.media.filter(media=>media.kind==='tactile'&&!media.codec).map(async media=>{
+      const blob=source.file(media.path);if(!blob)return;
+      try{media.codec=(await probeMovie(blob,signal)).codec;}catch{signal.throwIfAborted();}
+    }));
+    if(version!==generation)return;
+    playbackMark('metadata-loaded',ep.id);
     for(const media of ep.media) if(!parsed.timings[media.id]) throw new Error('invalidPackage');
     const map:Record<string,string>={};
     for(const media of ep.media) {const file=samplePackage.value!.file(media.path);if(file){const url=URL.createObjectURL(file);map[media.id]=url;ownedUrls.push(url);}}
-    urls.value=map; data.value=parsed; active.value=ep; controller.reset(ep.durationMs);
+    urls.value=map; data.value=parsed; active.value=ep; controller.reset(ep.durationMs,ep.media,parsed.timings);
     document.querySelector('.workspace')?.scrollTo(0,0);
   } catch { if(version===generation)error.value='openError'; }
   finally { if(version===generation)loading.value=false; }
@@ -45,7 +59,7 @@ async function choose(event: Event) {
   const files=[...((event.target as HTMLInputElement).files || [])];
   if(!files.length)return;
   openAbort.abort();const abort=new AbortController();openAbort=abort;
-  loadAbort.abort();++generation;controller.reset();active.value=null;data.value=null;await nextTick();revoke();loading.value=true;error.value=null;
+  loadAbort.abort();++generation;controller.reset();active.value=null;data.value=null;await nextTick();revoke();tactileCache.clear();loading.value=true;error.value=null;
   try {const parsed=await openRecording(files,event.target===archiveInput.value,abort.signal);if(abort.signal.aborted){parsed.dispose();return;}samplePackage.value?.dispose();samplePackage.value=parsed;query.value='';await selectEpisode(parsed.manifest.episodes[0]);}
   catch(e){if(!abort.signal.aborted){error.value=e instanceof Error && e.message==='invalidArchive'?'invalidArchive':'missingRecording';loading.value=false;}}
   finally {(event.target as HTMLInputElement).value='';}
@@ -61,7 +75,7 @@ function keyboard(event:KeyboardEvent) {
 }
 watch(language,()=>{document.documentElement.lang=language.value==='en'?'en':'zh-CN';});
 onMounted(()=>window.addEventListener('keydown',keyboard));
-onBeforeUnmount(()=>{++generation;loadAbort.abort();openAbort.abort();samplePackage.value?.dispose();revoke();window.removeEventListener('keydown',keyboard);});
+onBeforeUnmount(()=>{++generation;loadAbort.abort();openAbort.abort();samplePackage.value?.dispose();tactileCache.clear();revoke();window.removeEventListener('keydown',keyboard);});
 const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':code==='empty_signal'?'emptyTactile':code==='missing_trajectory'?'noTrajectory':'unavailableSignals';
 </script>
 
@@ -70,7 +84,7 @@ const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':co
     <input ref="input" class="file-input" type="file" webkitdirectory multiple @change="choose" aria-label="Recording folder" />
     <input ref="archiveInput" class="file-input" type="file" accept=".tar,application/x-tar" @change="choose" aria-label="Episode TAR archive" />
     <header class="app-header" :inert="!!expanded">
-      <div class="brand"><div class="brand-mark"><Aperture :size="24" :stroke-width="1.7" /></div><span>{{ t('brand') }}<small>DATA EXPLORER</small></span><span class="version-label">1.1.7</span></div>
+      <div class="brand"><div class="brand-mark"><Aperture :size="24" :stroke-width="1.7" /></div><span>{{ t('brand') }}<small>DATA EXPLORER</small></span><span class="version-label">{{ appVersion }}</span></div>
       <div class="header-actions"><span class="offline-label"><i></i>{{ t('local') }}</span><button class="language-button" @click="language = language === 'en' ? 'zh' : 'en'" :aria-label="language === 'en' ? '切换为中文' : 'Switch to English'"><Globe2 :size="15" />{{ language==='en'?'中文':'EN' }}</button><button v-if="samplePackage" class="button secondary small" @click="input?.click()"><FolderOpen :size="16" />{{ t('open') }}</button><button v-if="samplePackage" class="button secondary small" @click="archiveInput?.click()">{{ t('openArchive') }}</button></div>
     </header>
 
@@ -100,7 +114,7 @@ const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':co
       </main>
 
       <div v-if="expanded" class="expand-backdrop" @click.self="closeExpand"><div class="expanded-top"><span>{{ t('fullscreenHint') }}</span><button class="icon-button expanded-close" :aria-label="t('close')" @click="closeExpand"><X :size="21" /></button></div></div>
-      <footer class="playback-bar" v-if="active"><div class="transport"><button class="icon-button" :aria-label="t('previous')" :title="t('previous')" @click="controller.step(-1)"><SkipBack :size="19" /></button><button class="play-button" :aria-label="t(playing?'pause':'play')" :title="t(playing?'pause':'play')" @click="controller.toggle()"><LoaderCircle v-if="busy" class="spin" :size="21" /><Pause v-else-if="playing" :size="21" fill="currentColor" /><Play v-else :size="21" fill="currentColor" /></button><button class="icon-button" :aria-label="t('next')" :title="t('next')" @click="controller.step(1)"><SkipForward :size="19" /></button></div><div class="timeline-group"><div class="timeline-labels"><span class="timecode">{{ timeText(time) }} <small>/ {{ timeText(duration) }}</small></span><span class="playback-status"><i :class="{running:playing}"></i>{{ t(busy?'buffering':playing?'playing':time?'paused':'ready') }}</span></div><input type="range" class="timeline" min="0" :max="duration" step="1" :value="time" :aria-label="t('timeline')" :style="{'--progress': `${time/Math.max(duration,1)*100}%`}" @input="controller.seek(Number(($event.target as HTMLInputElement).value), false)" /></div><div class="playback-extras"><select v-model.number="rate" :aria-label="t('speed')" :title="t('speed')"><option v-for="speed in [.25,.5,1,1.5,2]" :key="speed" :value="speed">{{ speed }}×</option></select><button class="icon-button help-button" :aria-label="t('help')" :title="t('help')" @click="showHelp=!showHelp"><Keyboard :size="19" /></button><div v-if="showHelp" class="shortcut-popover">{{ t('shortcuts') }}<br />{{ t('rotate') }}</div></div></footer>
+      <footer class="playback-bar" v-if="active"><div class="transport"><button class="icon-button" :aria-label="t('previous')" :title="t('previous')" @click="controller.step(-1)"><SkipBack :size="19" /></button><button class="play-button" :aria-label="t(playing?'pause':'play')" :title="t(playing?'pause':'play')" @click="controller.toggle()"><LoaderCircle v-if="busy || preparing" class="spin" :size="21" /><Pause v-else-if="playing" :size="21" fill="currentColor" /><Play v-else :size="21" fill="currentColor" /></button><button class="icon-button" :aria-label="t('next')" :title="t('next')" @click="controller.step(1)"><SkipForward :size="19" /></button></div><div class="timeline-group"><div class="timeline-labels"><span class="timecode">{{ timeText(time) }} <small>/ {{ timeText(duration) }}</small></span><span class="playback-status"><i :class="{running:playing && !preparing && !busy}"></i>{{ t(preparing ? (playing ? 'playWhenReady' : 'preparingTogether') : busy ? 'buffering' : playing ? 'playing' : time ? 'paused' : 'ready') }}<template v-if="preparing"> · {{ preparedCount }}/{{ channelCount }}</template></span></div><input type="range" class="timeline" min="0" :max="duration" step="1" :value="time" :aria-label="t('timeline')" :style="{'--progress': `${time/Math.max(duration,1)*100}%`}" @input="controller.seek(Number(($event.target as HTMLInputElement).value), false)" /></div><div class="playback-extras"><select v-model.number="rate" :aria-label="t('speed')" :title="t('speed')"><option v-for="speed in [.25,.5,1,1.5,2]" :key="speed" :value="speed">{{ speed }}×</option></select><button class="icon-button help-button" :aria-label="t('help')" :title="t('help')" @click="showHelp=!showHelp"><Keyboard :size="19" /></button><div v-if="showHelp" class="shortcut-popover">{{ t('shortcuts') }}<br />{{ t('rotate') }}</div></div></footer>
     </template>
   </div>
 </template>

@@ -689,11 +689,12 @@ small {
   font-weight:450;
   pointer-events:none
 }
-.difference-cell { background:#fff }
+.difference-cell { background:#000 }
+.difference-cell .region-missing { background:#000 }
 /* Decoded source pixels remain available to both playback paths, outside layout. */
 .tactile-source { display:none }
 .response-legend { display:flex; align-items:center; gap:6px; color:#a1b3c6 }
-.response-legend i { display:block; width:58px; height:5px; border-radius:3px; background:linear-gradient(90deg,#ffd219,#dc2314) }
+.response-legend i { display:block; width:58px; height:5px; border-radius:3px; background:linear-gradient(90deg,#000,#420a68,#932667,#dd513a,#fca50a,#fcffa4) }
 .media-message {
   position:absolute;
   inset:0;
@@ -799,8 +800,12 @@ small {
 }
 .tactile-card .panel-heading {
   height:33px;
-  min-height:33px
+  min-height:33px;
+  border-radius:8px 8px 0 0
 }
+/* Bilingual settings can be taller than a small sensor card. */
+.tactile-card:has(.gain-popover[open]) { overflow:visible }
+.tactile-card .tactile-footer { border-radius:0 0 8px 8px }
 .tactile-footer {
   display:flex;
   align-items:center;
@@ -1443,3 +1448,6 @@ small {
 .gain-popover .cleanup-setting { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
 .gain-popover .cleanup-setting input { width:15px; height:15px; margin:0; accent-color:#94b9f3; }
 .gain-popover .cleanup-hint { margin:8px 0 16px; color:#91a5bc; font-size:10px; line-height:1.5; }
+
+/* First frames are staged underneath an opaque overlay until joint readiness. */
+.media-message.joint-preparation { background: #090c10; }

@@ -30,3 +30,9 @@ test('explicit user seeks remain exact and decoder failures reject',async()=>{
   const failed=player.seek(1);v.dispatchEvent(new Event('error'));await assert.rejects(failed,/video/);
   const disposed=player.seek(2);player.dispose();await assert.rejects(disposed,/video/);
 });
+test('native readiness concerns decoded video only',async()=>{
+  const v=new Video(),player=transport(v);
+  assert.equal(player.ready,true);assert.equal(player.prepare(),true);
+  const sought=player.seek(1.5);assert.equal(player.prepare(),false);
+  v.finishSeek();await sought;assert.equal(player.prepare(),true);
+});

@@ -1,5 +1,451 @@
 # Validation
 
+## Portable 1.2.0: sequential tactile startup (2026-09-28)
+
+The portable viewer now keeps native RGB playback where available and selects the
+bundled sequential decoder for H.264/HEVC tactile panels before any video element
+is mounted. Two calibration jobs run alongside camera buffering. Opening grayscale
+samples seed playback rather than being decoded a second time; the first frame and
+0.65-second reserve are prepared before joint reveal. Tactile frames transfer only
+grayscale source data and the response image. Paused settings reuse the decoder
+worker. A compiled WebAssembly module is shared across workers with a byte-based
+fallback. The fixed baseline, noise statistics, arc mask and color calculation are
+unchanged; no raw placeholder or early camera playback was introduced.
+
+### Investigation and measured startup
+
+The former Firefox path performed 240 calibration seeks across four sensors.
+Measured seek time was 781–895 ms per sensor, plus 166–240 ms of sampling replies
+and 218–373 ms of statistics/arc processing. A native run took 2,641 ms cold, while
+a later resource-constrained run took 7,870 ms. A test-only mixed-path experiment
+reached 1,617 ms cold / 999 ms cached; it was feasibility evidence, not a release
+acceptance run. Firefox 156 on this host exposes VideoDecoder but reports the
+recordings' HEVC configuration unsupported, so the optimization does not depend on
+WebCodecs HEVC availability or changing the user's browser settings.
+
+Repeated episode-selection-to-joint-reveal measurements in Firefox 156, including
+metadata and cold calibration, are:
+
+- Capping, six streams, five cold starts: **1,224 / 1,147 / 1,153 / 1,315 / 1,163 ms**.
+  Cached returns: **635 / 641 / 688 / 621 / 628 ms**.
+- Folding, six streams, five cold starts: **1,389 / 1,213 / 1,228 / 1,188 / 1,192 ms**.
+  Cached returns: **654 / 608 / 653 / 631 / 653 ms**.
+- Sorting, seven streams, five cold starts: **1,344 / 1,180 / 1,461 / 1,701 / 2,290 ms**.
+  Cached returns: **619 / 773 / 785 / 726 / 735 ms**.
+
+All 15 repetitions in the completed acceptance runs satisfy the 3,000 ms limit. Every run requires the
+expected panel count, selected episode, current generation, accepted tactile frame
+acknowledgements and joint reveal. No clock/RGB movement precedes readiness.
+Telemetry verifies zero startup rewinds, 60 baseline samples per sensor, no native
+tactile video elements, four workers, and four cache hits with no new sampling or
+fitting on every cached return. Initial folder/TAR indexing is outside this
+selection-to-presentation measurement and is not hidden inside the reported times.
+
+One earlier sorting repetition **failed** at **3,036 ms** after four 1,236–1,366 ms
+starts. Available RAM declined from about 1,800 to 593 MiB across navigation-heavy
+runs. The harness had created additional viewer history entries between cold runs;
+the final sorting check refreshes the same entry to avoid retaining prior viewer
+documents in browser history. The failure is preserved in
+`artifacts/firefox/fast-sorting-startup.json`; it has not been reclassified as a pass.
+The new measurements are host-specific, not a guarantee under arbitrary resource
+pressure. Passing repeated runs had **667–2,240 MiB available RAM**, essentially
+full 8 GiB swap, and full-memory-stall ten-second averages of **0–3.01%**. No other
+applications were closed. Only isolated test browsers were started and stopped.
+
+### Playback from the portable ZIP
+
+The final ZIP was extracted and its actual `viewer.html` used for each 24-second
+Firefox playback test after the RGB bitmap-reuse and prepared-package fixes below.
+All 12 local sensor baselines detected their sensing regions.
+
+- Sorting advanced **23,717 ms in 23,712 ms**, with zero buffering samples,
+  **717 paints per tactile panel**, and contact visible in **14/14** sampled
+  moments on both active left sensors. Cold/cached startup: **1,379 / 653 ms**.
+- Capping advanced **23,734 ms in 23,729 ms**, with zero buffering samples,
+  **717 paints per panel**, and active contact visible in **4/4** sampled moments.
+  Cold/cached startup: **1,312 / 602 ms**.
+- Folding advanced **23,799 ms in 23,782 ms**, with zero buffering samples,
+  **719 paints per panel**, and contact visible in **11/11** sampled moments
+  on both right sensors. Cold/cached startup: **1,264 / 698 ms**.
+
+There were no page errors in these runs. Evidence is under
+`artifacts/firefox/fast-{capping,folding}-startup.json`,
+`artifacts/firefox/fast-sorting-startup-final.json`, and
+`artifacts/firefox/portable-final-{sorting,capping,folding}-live{,-raw}.json`.
+The final ZIP runs had **1,187–2,315 MiB available RAM** at the recorded endpoints,
+nearly full 8 GiB swap, and full-memory-stall ten-second averages of **0–0.24%**.
+Earlier candidate-ZIP runs are retained as
+`artifacts/firefox/portable-{sorting,capping,folding}-live-live{,-raw}.json`.
+
+The synthetic pixel/control run (`artifacts/fast-pixels/`) produced **zero byte
+mismatches** between displayed responses and the shared filter on identical
+samples/models, including paused settings, staged seeks, gain changes, expansion,
+Show all changes and outside-only contact. Continuous playback advanced 6,200 ms
+in 6,199.8 ms, with zero buffering, 191 paints per panel and visible contact in all
+ten sampled moments. Normal and expanded English/Chinese views were inspected.
+
+`npm test` passes all **11 files**, including actual worker orchestration tests for
+opening-frame reuse, no duplicate decode/rewind, short clips, seeks, cached starts,
+and settings redraw ownership, plus the existing numerical/mask/cache/staleness
+regressions. `npm run test:python` passes **eight cases**. Type checking and the
+self-contained build pass.
+
+Final forced-software and pixel compatibility startup checks also pass
+(`artifacts/fast-startup-software-final/` and `artifacts/fast-startup-compat/`).
+With five seconds deliberately added to each calibration job, RGB and the clock
+remain held until all successful tactile frames are staged. Cached reopening
+takes **124.2 / 145.9 ms**, respectively, with four cache hits and no new baseline
+sampling or fitting. These runs cover queued Play cancellation, pause, seeks,
+stepping, speed changes, delayed settings replies, rapid episode switches, source
+replacement, cleanup and panel-local failures. The mixed-path check in
+`artifacts/fast-startup-mixed/` also exercises native RGB decoder fallback.
+The final offset fixture passes with 250–1000 ms channel offsets and 0.9–1.1
+capture-time scales (`artifacts/fast-offsets/`): staged frames match the mapped
+timestamp, delayed generations/settings are rejected, and cached readiness takes
+**146.4 ms**. The retained native tactile compatibility path passes the same
+startup/control/fallback/failure suite (`artifacts/fast-native-compat/`), including
+the five-second calibration delay; cached readiness takes **112.5 ms**. All browser
+runs are sequential. The isolated test browser/driver processes exited afterward.
+
+The first forced-software run **failed** because restaging an already presented
+RGB frame attempted to transfer its consumed ImageBitmap a second time. The
+transport now acknowledges the existing RGB canvas when reusing that frame;
+tactile frames still restage from their retained grayscale input. A focused unit
+regression and the complete forced-software rerun pass. The failed report remains
+in `artifacts/fast-startup-software/`.
+
+Final checks additionally pass for three-frame clips (`fast-short`), injected
+calibration failures (`fast-failure`), missing arcs through playback/settings/
+expansion in both languages (`fast-missing-final`), and older prepared packages
+whose manifests omit codec metadata (`fast-prepared`). The latter probe selected
+tactile MP4 headers before mounting, so these packages use the same fast path.
+The final compatibility pixel/control check (`fast-pixels-compat`) remains
+byte-identical with ImageBitmap and OffscreenCanvas disabled. The earlier
+`fast-missing` directory is an ordinary pixel run invoked with an incorrect flag;
+only `fast-missing-final` supplies missing-arc evidence.
+
+### Portable contents
+
+`dist/RobotDataViewer.zip` contains version **1.2.0**, a self-contained viewer,
+bilingual START_HERE and quick starts, format documentation, notices, decoder
+sources and frontend rebuild inputs. It contains no recordings, test artifacts,
+node_modules or customer sample files. Archive CRC checks pass; the extracted
+viewer matches the built HTML byte for byte. `RobotDataViewer.zip.sha256` is supplied
+beside the ZIP. Recipients extract the complete archive and open `viewer.html`;
+no installation, server, Python, external codec or internet connection is required.
+The shipped frontend source archive was extracted separately and rebuilt with the
+installed locked dependencies. Type checking and the build pass, and the rebuilt
+viewer is byte-identical to the distributed HTML (SHA-256
+`f260fbd415120333339cbed732072d45f16dfa1f2f8032e12b711455b5bca217`).
+Evidence: `artifacts/release-source-rebuild.log`.
+
+## Synchronized RGB and tactile startup (2026-09-28)
+
+RGB and tactile now stage their mapped current frames behind opaque preparation
+overlays. The coordinator knows every expected channel before any decoder is
+created. It holds the shared clock until every successful channel has acknowledged
+its frame for the current playback generation, then reveals the views together and
+releases queued Play on the next animation frame. Pause cancels queued Play. Seeks,
+stepping, rate changes and native-to-software fallback re-enter the same barrier.
+Failures are visible terminal exceptions, not missing entries in readiness.
+
+Native automatic seek/pause rendering is detached during staging. A coalesced
+staging request checks playback generation, captured source time, settings revision
+and paint ordering before acknowledging readiness. This fixes the reproduced race
+where an automatic seek render used an old gain while the staged render used the
+new gain. Synchronous seek, buffer, canvas and renderer-construction errors are
+contained within their panel. Failure callbacks are bound before worker creation;
+even throwing cleanup cannot skip the notice or stop the other channels' clock.
+Paused settings-worker construction is covered as well. The two-job calibration
+limit, fixed filter/mask model and 32 MiB LRU cache remain unchanged.
+
+### Deterministic checks
+
+- Native, forced-software and RGBA compatibility startup checks pass with a
+  five-second delay injected into each uncached calibration reply. Four tactile
+  channels require two job waves: joint readiness takes **10,939 / 10,746 / 10,938
+  ms**, respectively. During preparation there is no RGB playback or shared-clock
+  advancement. These deliberately delayed times are not normal startup timings.
+- Cached joint readiness takes **119 / 323 / 131 ms**. Play after readiness starts
+  clock movement in **23 / 25 / 23 ms**. Every cache return records four hits,
+  unchanged sampling/fitting counts and the expected worker count after reopening
+  completes. Rapid switches and replacing the recording source release obsolete
+  work; replacement clears cached models.
+- Browser waits require the expected number of panels, the selected episode,
+  current generation, per-channel readiness acknowledgements and actual tactile
+  canvas paints. Delayed seeks/settings, queued Play cancellation, stepping, speed
+  changes, fallback and synchronous canvas/worker failures pass. The additional
+  paused settings-worker failure check passes in forced-software mode.
+- Native and software offset fixtures pass with channel starts staggered by
+  250–1000 ms and capture-time scales of 0.9–1.1. First rendered frames match the
+  independently calculated mapped target within one source-frame interval; no
+  future frame is admitted. Both paths also pass three-frame clips.
+- Native, software and compatibility pixel/control checks pass, including a
+  settings change during a staged seek with delayed replies. Identical decoded
+  input/model pairs produce byte-identical displayed RGBA. All excluded pixels
+  remain opaque black, including Show all changes and outside-only contact.
+  Missing arcs and injected calibration failures remain visible while other
+  channels continue. English/Chinese normal, preparation, settings and expanded
+  views were inspected.
+- Sustained synthetic software playback advances **6,200 ms in 6,199.7 ms**, with
+  zero buffering samples, 191 paints per tactile panel and contact visible in all
+  ten sampled contact moments.
+- `npm test` passes all ten test files, including existing numerical/mask goldens
+  and new staging/failure regressions. `npm run test:python` passes eight cases;
+  `npm run build` and `git diff --check` pass. Unit files now run serially to reduce
+  peak memory use. Browser tests and builds are run separately.
+
+### Local recordings and host conditions
+
+The seven-stream sorting recording reaches joint readiness in **1,655.6 ms cold /
+853.7 ms cached** using Chrome software decoding, with no artificial calibration
+delay. Its uninterrupted run advances **23,799 ms in 23,787.8 ms**, with zero
+buffering samples, 719 tactile paints per panel and contact visible in all 16
+sampled moments on both left sensors. There are no page exceptions or outbound
+requests.
+
+Firefox native decoding on the same recording, with tactile replies delayed
+160 ms, reaches joint readiness in **3,028 ms cold / 495 ms cached**. Playback
+advances **23,850 ms in 23,838 ms**, with zero buffering samples, 134–135 paints per
+panel and visible contact in all 15 sampled moments on both left sensors. This
+also verifies that useful delayed results continue painting rather than being
+rejected merely because the playback clock advances.
+
+The six-stream capping recording reaches native joint readiness in **2,831 ms
+cold / 306 ms cached** and advances **23,816 ms in 23,803 ms**. It has zero
+buffering samples, 600–604 paints per tactile panel and visible contact in all four
+sampled moments on the active left-right sensor. The six-stream folding recording
+reaches native joint readiness in **2,742 ms cold / 326 ms cached** and advances
+**23,734 ms in 23,737 ms**. It has zero buffering samples, 600–604 paints per panel
+and visible contact in all 11 sampled moments on both right sensors. These two runs
+use normal render replies, without artificial delay. All 12 local tactile panels
+across the three recordings prepare and continue updating; none reports a missing
+arc or rendering failure.
+
+Software joint startup also passes on the two six-stream recordings: capping
+measures **1,786.9 ms cold / 807.7 ms cached**, and folding **2,077.7 ms cold /
+910.8 ms cached**, without injected calibration delay. Both return four cache hits,
+no new sampling/fitting and exactly six live workers after completed reopening.
+Their 2.2-second continuation samples advance in real time; the full 24-second
+software stress measurement above is specifically the seven-stream sorting run.
+
+The interrupted implementation run produced no completed browser report and is
+not counted as passing. A later sequential test wrapper exited with code 143 after
+writing the native offset report; direct native and software offset reruns both
+completed successfully and verified cleanup. The first new Firefox local run
+failed in its reporting helper because timestamp rounding excluded the selection
+mark. The filter now includes the exact selection timestamp; only the corrected
+completed run is counted above. These harness interruptions do not establish a
+viewer failure or a successful test by themselves.
+
+At the earlier interruption the host had about **446 MiB available RAM**, full
+8 GiB swap, and a **68%** ten-second full-memory-stall average. That is observed
+resource pressure, not proof of the freeze's cause. The final deterministic startup
+runs began with **2,869–2,932 MiB** available and ended with **1,966–2,314 MiB**;
+full-memory-stall averages were 0–0.56%. All measurements are host-specific.
+No user applications were closed. Historical failed software stress runs below
+remain failures; the new successful run does not retroactively change them.
+
+Evidence: `artifacts/joint-{native-final,software-hardened,compat-final}/`,
+`artifacts/joint-pixels-{native,software,compat}/`, `artifacts/joint-short-*`,
+`artifacts/joint-missing-software/`, `artifacts/joint-baseline-failure/`,
+`artifacts/joint-offsets-{native,software}-final/`,
+`artifacts/joint-real-software-{startup,capping,folding}/`,
+`artifacts/live-tactile/joint-real-software-live*.json`, and
+`artifacts/firefox/joint-real-native-{sorting-final,capping,folding}-live*.json`.
+
+## Superseded camera-only startup experiment (2026-09-28)
+
+Historical behavior, superseded by synchronized startup: camera readiness was independent of tactile calibration and catch-up. Two
+background jobs at most prepare fixed baseline/noise/mask models; a 32 MiB LRU
+cache reuses completed models for the same source Blob and decoding path. A private
+seek and a buffered current frame admit each tactile panel without restarting the
+shared clock. Catch-up releases expired frames without painting, and fails locally
+after 30 seconds of unsuccessful work. Explicit seek generations and paint ordering
+reject obsolete replies while retaining useful completed renders during playback.
+Compatibility capture sends one RGBA frame per asynchronous worker request; median
+statistics, arc fitting and filtering do not run on the UI thread.
+
+The earlier `artifacts/startup-native/results.json` contains **invalid cache and
+rapid-switch success claims**: its readiness predicate accepted an empty panel list.
+Only that run's initial 30 ms Play measurement and continuous-update observation
+were valid. Replacement checks require four mounted panels, four actual response
+paints after the current episode selection, four cache hits, unchanged sampling/fit
+counts, and the exact expected live worker count. The first real-recording attempt
+also exposed a test selector that vanished during metadata loading; the corrected
+run uses the persistent episode button. A short-clip attempt supplied a relative
+fixture path and timed out before readiness; fixture paths are now resolved and the
+native/software short-clip checks pass. Neither failed test attempt is counted as a
+completed validation run.
+
+- Final Chrome 152 deterministic startup checks inject a five-second calibration
+  delay. Play-to-clock movement is **25.1 ms native, 98.7 ms software, and 21.6 ms
+  compatibility**. Cold first-camera frames appear 78/336/79.5 ms after
+  selection. All are below the
+  one-second acceptance threshold. Tactile calibration remains visible for two
+  delayed job waves, about 10.8–11.1 seconds in total, without holding the camera.
+- Cached returns paint all four tactile maps within **131.2/361.3/144.8 ms** of
+  selection respectively. All runs record exactly four hits, no additional baseline
+  samples or fits, and 4/5/4 live workers after both cached returns and rapid reopen.
+  Replacing the source invalidates the cache. First responses join the moving clock
+  within one source frame; the second delayed pair joins at the stopped end of the
+  eight-second clip. Controls, speed changes, expansion, both languages, and continued
+  painting pass with zero page exceptions or outbound requests.
+- Thirteen startup/cache/order unit cases and three actual decoder-lifecycle cases
+  cover LRU eviction, Blob/path/parameter separation, detached copies, two-job
+  scheduling, queued/running cancellation, full catch-up buffers, frame ownership,
+  no future-frame paint, obsolete refill errors, seek/rate invalidation, offsets,
+  short clips, timeout/disposal and idempotent failures. Existing NumPy/OpenCV
+  numerical and sensing-mask goldens remain unchanged. `npm test` passes all ten
+  test files; `npm run test:python` passes eight cases; `npm run build` and
+  `git diff --check` pass.
+- Native, software and compatibility pixel/control checks pass, including delayed
+  native/settings replies, paused gain/Show all changes, frame stepping, repeatable
+  seeks, expansion and English/Chinese text. Identical decoded inputs and captured
+  models produce identical displayed RGBA values. Outside-only changes remain black.
+  Three-frame recordings pass both decoders. Injected calibration failure and
+  missing-arc cases remain confined to their panels; other channels keep playing.
+  Normal, expanded and preparation views were visually inspected in both languages.
+- Continuous synthetic software playback advances **6,200 ms in 6,199.9 ms**, with
+  zero buffering samples, 191 paints per tactile panel and visible contact in all
+  ten sampled contact moments.
+
+On the local seven-stream sorting recording, Chrome software startup takes **208.4
+ms from Play to clock movement**. Metadata loads in 130 ms; the three camera frames
+appear 511–514 ms after selection, and all tactile panels join by 2,476 ms. Individual
+calibrations take 406–484 ms. A cached return needs no fitting and paints all tactile
+panels by 854 ms (camera frames by 483 ms). These are measured local timings, not
+cross-machine guarantees.
+
+Firefox 156 native playback on the same recording starts its clock in **139 ms**;
+first cameras appear 321–335 ms after selection. With tactile render replies delayed
+160 ms, all tactile panels paint by 3,423 ms cold and **585 ms cached**. Cached Play
+starts in 20 ms. Uninterrupted playback advances **24,333 ms in 24,223 ms**, with zero
+buffering samples, 129–130 tactile paints per panel, no page errors and visible
+contact in all 15 sampled moments on both left sensors.
+
+The corresponding real **seven-stream software stress check failed**: it advanced
+15,083 ms in 26,222.9 ms with 19 buffering samples. All tactile maps continued to
+update (167–170 paints), contact was visible in all seven observed contact moments,
+and there were no page exceptions or outbound requests. This does **not** establish
+smooth sustained software playback on this host. Memory available to that run fell
+from 1,162 MiB to 395 MiB; the 8 GiB swap area was full, and the final 10-second full
+memory-stall average was 18.93%. Resource pressure was observed, but has not been
+proved the sole cause. The prior arc-change stress failure is retained below.
+
+The host has 14.7 GiB RAM. Final synthetic startup runs began with 1,338–1,399 MiB
+available and ended with 657–1,045 MiB; the native real-recording run went from
+1,483 MiB to 820 MiB available. Browsers were run sequentially, each in an isolated
+profile. No other applications were closed or source recordings modified. Full
+`/proc/meminfo` and memory-pressure snapshots accompany the startup and real live
+reports. Do not interpret the synthetic passes or fast camera startup as a pass of
+the failed real software stress test.
+
+Evidence: `artifacts/startup-{native,software,compat}-final/`,
+`startup-controls-{native,software,compat}/`, `startup-controls-software-final/`,
+`startup-short-{native,software}/`, `startup-failure-native/`,
+`startup-missing-{software,compat}/`, `startup-real-software-final/`,
+`artifacts/firefox/startup-real-native-live{,-raw}.json`, and
+`artifacts/live-tactile/startup-real-software-live{,-raw}.json`.
+Use `node tools/browser-startup.mjs` (forced software by default), `RDV_NATIVE=1`
+for native and `RDV_NATIVE=1 RDV_COMPAT=1` for compatibility. The default delay is
+5,000 ms; real measurements use `RDV_REAL=1 RDV_CALIBRATION_DELAY=0 RDV_FOLDER=...`.
+`tools/browser-live-tactile.py --startup-check --check` measures native cold/cached
+startup and uninterrupted real playback together. Keep browser runs sequential.
+
+## Arc-masked sensing region (2026-09-28)
+
+The fixed opening median now also calibrates a sensing mask. The bundled detector
+ports FlawDetection's anchored curve fit, dominant foreground, 14-pixel inward
+margin and three erosion iterations. Surface verification to the right of candidate
+points and confidence/curvature gates reject the neighboring rim, straight edges
+and bright blank images. The unchanged reference is documented under
+`tools/reference/`; the original FlawDetection project was not modified.
+
+- All ten synthetic detector goldens match the independent NumPy oracle's masks
+  exactly, including odd dimensions, existing contact, neighboring rims and six
+  rejection cases. Twelve detector/filter cases additionally check source-array
+  immutability, one-frame calibration, deterministic repeated rendering, saturated
+  changes immediately outside/inside the mask, Show all changes, return to baseline
+  and opaque-black failure output. `npm test` passes all eight test files;
+  `npm run test:python` passes eight cases; `npm run build` and `git diff --check` pass.
+- All 12 real sensor baselines from the capping, folding and sorting recordings
+  detect successfully. Every mask byte matches Python; the largest curve-coordinate
+  difference is 0.000046 analysis pixels. Confidence ranges from 0.8950 to 0.9319;
+  retained areas range from 79.65% to 82.36%. Standalone Node arc detection takes
+  80.6–456.3 ms per 640×360 baseline (median 105.7 ms), once during calibration;
+  this excludes decoding and median/noise estimation and is not a startup guarantee.
+  All twelve mask overlays were visually inspected.
+- With identical oracle masks and decoded inputs, 72 real frames differ from OpenCV
+  in only 12 of 66,355,200 RGBA values, each explained by an adjacent pre-gamma
+  quantization bin. The largest channel difference is 25 at the black cutoff.
+  Every excluded output pixel is opaque black; repeated renders are byte-identical.
+- Chrome 152 passes native, forced-software and synchronous compatibility controls:
+  gain, Show all changes, paused redraw, frame stepping, repeat seeks, expansion,
+  English/Chinese text and outside-only changes. Captured models reproduce displayed
+  pixels exactly on their respective decoder paths. Three-frame clips pass native
+  and software checks. Missing-arc fixtures leave one map black with the localized
+  notice through settings changes and playback while the other channels continue,
+  on all three paths. Native/software rapid episode changes during calibration,
+  native replies delayed 160 ms, and an injected baseline failure also pass. All
+  control runs report zero page exceptions and zero outbound page requests.
+- The real capping recording passes Chrome software controls. Normal/expanded maps,
+  English/Chinese settings and the black failure notice were visually inspected.
+  The longer settings content exposed clipping in small cards; the popover now
+  extends outside the card and its visibility is checked in both languages.
+- Firefox 156 native playback with tactile replies delayed 160 ms advances 23,817 ms
+  in 23,805 ms, with zero sampled buffering and zero page errors. Each map paints
+  131–132 times; both left sensors show response in all 15 sampled contact moments.
+  Completed tactile frames continue painting despite replies arriving slowly.
+
+The real seven-stream Chrome software stress run did **not** pass on this host:
+it advanced only 3,600 ms in 46,046 ms, with 18 busy samples, before reaching any
+contact window. There were no page exceptions or outbound page requests. Host swap
+was full and memory-pressure counters showed sustained stalls. A subsequent
+profiling attempt timed out evaluating the page, with only 422 MiB available and
+41% full memory stalls over the preceding minute. These observations limit the
+real-recording software-performance result; they do not establish smooth playback
+under memory pressure or prove that resource pressure was the only cause. No other
+applications were closed and no source recording was changed. A later small-fixture
+continuous-software check could not start Chrome (`Browser.getVersion` timed out
+before the viewer loaded). At that point only 363 MiB was available and full memory
+stalls averaged 45.8% over a minute. No isolated test browsers remained after cleanup.
+The earlier synthetic software controls passed; the optional `RDV_LIVE=1` continuous
+check is available for repeating on a host with sufficient resources.
+
+Evidence: `artifacts/response-roi/{roi-results,results}.json` and
+`mask-contact-sheet.jpg`; `artifacts/roi-native/`, `roi-software/`, `roi-compat/`,
+`roi-short-{native,software}/`, `roi-missing-{native,software,compat}/`,
+`roi-rapid-delayed/`, `roi-rapid-software/`, `roi-baseline-failure/`,
+`roi-real-capping/`; `artifacts/firefox/roi-native-delayed-live.json`; and
+`artifacts/live-tactile/roi-sorting-software.json` (the failed stress run).
+
+Regenerate detector goldens with `python3 tests/make_tactile_roi_reference.py` and
+browser recordings with `python3 tests/make_tactile_browser_fixture.py`. Run
+`node tools/browser-tactile-clean.mjs` with `RDV_NATIVE=1`, `RDV_COMPAT=1`,
+`RDV_NO_ARC=1` or `RDV_LIVE=1` for the corresponding path/scenario; compatibility
+requires native mode. Real-sample comparisons use
+`python3 tools/check-tactile-samples.py artifacts/tactile-real`. Native and software
+decoders can produce different baselines/colors; exact comparisons always use the
+same decoded inputs. Detection intentionally hides responses when a reliable arc
+is unavailable. Source framing and orientation, recording formats and timestamps
+are unchanged, and no runtime dependency or network service was added.
+
+## Calibrated Inferno tactile display (2026-09-28)
+
+The viewer now follows the supplied `tools/reference/render_tactile_diff.py`: fixed opening-frame median, per-pixel 99th-percentile noise, a 2-level margin, sigma-2 Gaussian smoothing, default 10× gain, gamma 0.7 and Inferno on opaque black. The Python reference was moved unchanged; its SHA-256 is `6946de24f9d0207d8907bcaccb8833cf38cfc5430fbe0bf898bec568ddbf36e4`. Native and software playback prepare their own fixed models using their decoded pixels. No recording format changed.
+
+- `npm test` passed all seven test files; `npm run test:python` passed all eight cases; `npm run build` passed TypeScript checking and produced the standalone HTML. New tests cover independent NumPy/OpenCV goldens, grayscale coefficients, median truncation, fractional percentiles, reflected Gaussian borders, saturation, the gamma cutoff, short clips, portrait/tiny frames, fixed-baseline repeatability, native readiness and calibration cancellation.
+- The real-sample comparison processes 72 frames across twelve sensors in the existing capping, folding and sorting recordings. Only 13 of 66,355,200 RGBA values differ from OpenCV, all explained by one neighboring pre-gamma quantization bin at floating-point boundaries. Some color-channel differences reach 25 at the explicit black cutoff. Every other value matches exactly; repeated rendering is byte-identical. This validates the reference calculation, not physical contact classification. Sources were read only.
+- Chrome 152 synthetic controls passed native playback, forced software playback and the synchronous compatibility path with OffscreenCanvas disabled. Captured baseline models reproduce the actual displayed pixels exactly on each path. Tests cover default 10×, gains 1×/16×, Show all changes, paused redraw, toggling during playback, frame stepping, repeated seeks, expansion and English/Chinese labels. Three-frame clips use all three frames on both decoder paths. The real capping recording also passed Chrome software and Firefox native controls; normal and expanded Inferno maps and the Chinese settings layout were visually inspected. Rapid recording switches during calibration with 160 ms delayed rendering passed; an injected baseline failure stayed visible in one native panel while the other channels continued playback.
+- Chrome software decoding of the real seven-stream sorting TAR advanced 23,999 ms in 23,994 ms with zero sampled buffering, 719–720 paints per tactile map, visible response in all 16 sampled contact moments on both left sensors, no page errors and no outbound requests. Firefox 156 native playback with tactile replies delayed by 160 ms advanced 23,816 ms in 23,814 ms, with zero sampled buffering, 127–128 paints per map and response in all 15 contact samples on both left sensors.
+
+Earlier live checks that read full-size display canvases repeatedly showed intermittent software buffering. The machine had approximately 1.6 GiB available memory and full swap. An independent playback profile (without those readbacks) had no steady-state underruns or main-thread long tasks; worker batches had a 46 ms median and 64 ms 95th percentile. Live probes now sample small, separate canvases to avoid imposing repeated full-size readback on the display. The subsequent live run passed; this does not guarantee real-time software decoding on every machine. Full-resolution pixel comparisons remain in paused control tests.
+
+Evidence: `artifacts/response-samples/results.json`, `artifacts/tactile-native/`, `artifacts/tactile-browser/`, `artifacts/tactile-compat/`, `artifacts/tactile-short-native/`, `artifacts/tactile-short-software/`, `artifacts/tactile-rapid-delayed/`, `artifacts/tactile-failure/`, `artifacts/tactile-real-capping/`, `artifacts/firefox/inferno-capping-controls-cleanup.json`, `artifacts/live-tactile/inferno-sorting-final.json`, `artifacts/firefox/inferno-native-delayed-live.json`, and `artifacts/playback-profile/inferno-profile.json`. Historical validation below describes earlier display algorithms.
+
+Reproduce synthetic checks with `python3 tests/make_tactile_browser_fixture.py`, then `node tools/browser-tactile-clean.mjs` (software) or `RDV_NATIVE=1 node tools/browser-tactile-clean.mjs`. Add `RDV_COMPAT=1` with native mode for the compatibility path. Use `RDV_FOLDER` and `RDV_CONTACT_MS` for other recordings, or `RDV_SHORT=1` with the generated `short` folder. NumPy/OpenCV goldens can be regenerated with `python3 tests/make_tactile_reference.py`; real reference comparisons use `python3 tools/check-tactile-samples.py /path/to/extracted-task-folders`. Diagnostic recordings and screenshots remain in ignored artifacts and are not shipped.
+
 ## Head-camera companion exports (1.1.7)
 
 Validated locally on 2026-09-23. Read-only inspection of the supplied remote `T1E1` export confirmed `ego-headcam-companion-1`, two 1920×1080 H.264 head videos at 60 fps, two 640×480 HEVC wrist videos and four 640×360 HEVC tactile videos at 30 fps inside `umi`. Both head CSVs contain 2,636 timestamps for 2,636 frames; every UMI raw CSV contains 1,329 timestamps for 1,329 frames. All eight timelines are nonnegative and monotonic. Head capture times span 7.648807–44,312.817874 ms. The processed UMI files intentionally contain 1,328 rows. No source files were modified.

@@ -45,8 +45,44 @@ The normalized episode model is internal; users do not need to create it. Existi
 
 Each sensor displays one map, preserving the recorded aspect ratio and orientation. Original tactile frames are decoded internally. They are not displayed alongside the response map, including in expanded view.
 
-Every frame is compared with a fixed copy of its first decoded frame. Maximum absolute RGB change is block-averaged onto a grid with at most 160 cells on either axis. Separable 3×3 and 9×9 means detect fine and broad spatial patterns. At each scale, the median and median absolute deviation estimate the background level and spread. Connected regions must meet both minimum area and accumulated excess-change thresholds; no strong central pixel is required. An absolute floor suppresses small camera fluctuations and a threshold cap preserves broad strong changes. The union of accepted regions is bilinearly feathered. A continuous white/amber/red palette applies display gain after detection, so raising gain does not admit additional background regions.
+Each channel prepares a fixed baseline from the first `min(totalFrames, max(8, round(2 × fps)))` decoded frames (ties-to-even rounding, default 30 fps if unknown). Short clips use every available frame. RGB frames are converted to 8-bit grayscale using OpenCV-compatible fixed-point coefficients. The per-pixel median is truncated to 8-bit; the 99th percentile of absolute deviations from that median uses linear interpolation and float32 storage.
 
-Native-video processing, software decoding, and software settings redraws use the same `TactileFilter` in workers. A synchronous compatibility fallback remains for browsers without offscreen bitmap processing. Native tactile sampling follows the media clock via animation frames rather than relying on the visibility of the source video. A single in-flight request coalesces incoming updates; completed frames remain useful during slow playback rendering. Seeks, settings changes, and disposal invalidate obsolete results. Decode-ahead and settings redraw buffers remain bounded.
+For each current frame, the renderer subtracts the stored noise floor and an additional 2 intensity levels from absolute grayscale difference, clamps at zero, and applies a separable 17-tap Gaussian with sigma 2 and reflected (`REFLECT_101`) boundaries. The result is multiplied by display gain, clamped/truncated to 8-bit, and mapped through a gamma-0.7 lookup table. Intensities below 10 are suppressed. A bundled 256-entry Inferno table supplies RGB colors; zero response is exactly opaque black. Floating-point accumulation can differ slightly from OpenCV SIMD processing at quantization boundaries.
 
-The reference and mask are deterministic for each frame. The reference does not adapt, so held image changes are not learned away. **Show all changes / 显示全部变化** bypasses spatial cleanup and colors all absolute RGB changes, including noise. Gain ranges from 1× to 16×, default 8×. Colors are relative image responses, not measured pressure. White means no detected image response, not proof of no physical contact. If the first frame already contains contact, it remains the reference. Lighting artifacts, residual sensor deformation, and contact with no visible tactile change cannot always be distinguished by image comparison alone. No RGB-camera or gripper data are used to invent a tactile response.
+The sensing region is detected from the median baseline using the locally bundled FlawDetection arc algorithm. A centre-aligned bilinear 640×360 analysis image feeds edge scoring, an anchored right-opening curve fit, guided refinement, and dominant-foreground selection. Candidate points must lead into surface pixels 14–30 analysis pixels to their right (median grayscale >0.075). Accepted curves have confidence ≥0.75, finite coordinates, and both endpoints at least 25 pixels right of the leftmost point. The mask keeps foreground right of the curve with a 14-pixel inward margin and three erosion iterations, then maps back to source pixel centres using nearest-neighbor sampling. The source frame is not cropped, rotated or resized for display.
+
+Excluded differences are zeroed before smoothing and output pixels are forced to opaque black after coloring, so outside changes cannot bleed into the sensing region. The mask is always enforced, including with Show all changes. Missing or unreliable arcs produce an empty mask and a visible panel notice; there is no unmasked fallback and other channels can continue playback.
+
+Native playback collects the opening frames using an independent video decoder at presentation-time midpoints; it never seeks the synchronized playback video for calibration. The software worker performs a calibration prepass and rewinds before filling its bounded playback queue. Shared playback readiness waits for calibration and a rendered frame from every available channel. Failures remain visible in their panels and are terminal exceptions to readiness; cancellation releases obsolete work. Calibration retains only grayscale samples and releases them after computing the model and sensing mask. Arc fitting runs once during preparation, never per frame.
+
+Native-video processing, software decoding, and software settings redraws share the same `TactileFilter` in workers. Browsers without offscreen bitmap processing capture one RGBA frame per asynchronous request; calibration, arc fitting and filtering still run in a worker. Native sampling follows the media clock independently of source-video visibility. One in-flight render coalesces updates, so slow rendering still paints completed frames. Seeks, settings changes, and disposal invalidate obsolete results. The internal baseline model contains dimensions, sample count, an 8-bit grayscale baseline, float32 noise-floor arrays, a source-sized byte mask, arc detection status and confidence; recording formats and timestamps are unchanged.
+
+Camera buffering has priority. Tactile preparation runs in a queue with at most two calibration jobs. The playback coordinator establishes all expected channels before panels mount, including queued decoders. Every channel stages its mapped current frame behind an opaque overlay; software decoding reserves up to 0.65 seconds ahead without seeking into the future. Once every successful channel acknowledges a frame for the current generation, all views are revealed together and queued playback starts on the next animation frame. Pause cancels queued playback. Seeks, frame stepping, speed changes and decoder fallback re-enter shared readiness without changing calibration. Native automatic rendering is suspended during staging; staged replies also carry source time and settings revision. Synchronous and asynchronous decoder/render failures are confined to their panel.
+
+Completed models are retained in a 32 MiB LRU memory cache, keyed by source Blob identity, capture/decoder path and calibration parameters. Cache arrays are copied before worker use. No calibration frames, videos or bitmaps are cached. Changing or closing the recording source clears the cache; there is no disk cache or speculative episode preparation. Transient failures are not cached.
+
+The baseline never adapts. Playback, seeking, holds and expansion reuse the same model. **Show all changes / 显示全部变化** bypasses noise subtraction, smoothing and the low-intensity cutoff, retaining grayscale comparison, gain, gamma, the same palette and the sensing mask. Gain ranges from 1× to 16×, default 10×. Baseline duration and gamma are fixed. Colors are relative image response, not measured pressure. Black means no detected image response or an excluded region, not proof of no physical contact. Existing contact in the opening interval becomes part of the baseline; lighting artifacts and residual deformation may also produce response. No RGB-camera or gripper data are used to invent a tactile response.
+
+The original Python/OpenCV implementation is preserved unchanged under `tools/reference/`; it is a development reference, not a runtime requirement.
+
+### Sequential tactile startup
+
+H.264/HEVC tactile panels select the bundled sequential decoder before mounting;
+only RGB panels use native video elements by default. Calibration starts alongside
+camera buffering, with two initialization/calibration jobs at most. The opening
+samples are converted from decoded RGBA using the reference coefficients and reused
+as grayscale playback frames after the fixed median/noise/mask model is complete.
+The native capture path remains available for other browser-playable codecs.
+
+Internal decoder messages carry optional grayscale source buffers for tactile
+frames and processed response images. RGB messages retain their image/pixel form.
+Settings redraws send a copy of the displayed grayscale sample to the same worker;
+source time, playback generation, settings revision and paint order still control
+acceptance. These are internal interfaces, not changes to recording files.
+
+Initial buffering stops at the requested 0.65-second reserve. Normal playback can
+prefetch farther. Retained opening samples and colored frame buffers share the
+64 MiB channel budget; when the opening window cannot fit alongside its reserve,
+startup uses one sequential rewind. The 32 MiB LRU contains only completed models,
+never videos, decoded samples or bitmaps. Bounded local diagnostics report decoder
+initialization, samples, seeks, statistics, arc detection and joint presentation.

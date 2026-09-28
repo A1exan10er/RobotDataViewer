@@ -1,6 +1,6 @@
 # Bundled decoder build
 
-The committed `decoder.wasm`, `libav.js`, and `libav-factory.js` support offline H.264/HEVC decoding. The frontend build assembles the worker with `tools/prepare-decoder.mjs`; it passes WebAssembly bytes directly to each worker, avoiding file-origin fetches, SharedArrayBuffer, and cross-origin-isolation requirements.
+The committed `decoder.wasm`, `libav.js`, and `libav-factory.js` support offline H.264/HEVC decoding. The frontend build assembles the worker with `tools/prepare-decoder.mjs`; it compiles the embedded WebAssembly once per viewer session and shares that module with workers (with a byte-based fallback), avoiding file-origin fetches, SharedArrayBuffer, and cross-origin-isolation requirements.
 
 Pinned upstreams:
 
