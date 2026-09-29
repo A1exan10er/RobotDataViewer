@@ -34,3 +34,9 @@ test('streaming content hashes distinguish same-name files and honor cancellatio
   assert.notEqual(await videoHash(new Blob(['abcd'])),await videoHash(new Blob(['abce'])));
   const abort=new AbortController();abort.abort();await assert.rejects(videoHash(new Blob(['abc']),abort.signal));
 });
+test('deleting episode force results removes matching memory entries only',()=>{
+  const t=parseForceTracks(fixture())[0],cache=new ForceCache();cache.put(t);cache.put({...t,sensor:'r_tact_r'});
+  cache.remove(sha,t.sensor);
+  assert.equal(cache.get(sha,t.sensor,weights),undefined);
+  assert.ok(cache.get(sha,'r_tact_r',weights));
+});

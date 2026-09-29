@@ -62,3 +62,5 @@ See [format and interfaces](docs/FORMAT.md) and [validation](docs/VALIDATION.md)
 ## Independence
 
 This project has its own build and release lifecycle. It does not import or run QualityCheck, use a database, contact a service, control hardware, label episodes, or modify recordings. The 6D/UMI transformation mathematics retain provenance from the company's existing viewer. The tactile display follows the supplied [offline reference](tools/reference/README.md).
+
+Native force acceleration in 1.4.0: launch the platform package for full-frame native preparation and a removable 256 MiB saved-result cache. The HTML-only viewer remains available. See [native builds and usage](docs/NATIVE_FORCE.md) and [measured validation](docs/VALIDATION.md).

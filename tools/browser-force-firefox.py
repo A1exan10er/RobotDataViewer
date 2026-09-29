@@ -17,6 +17,7 @@ p.add_argument('--viewer', default=str(ROOT / 'dist/viewer.html'))
 p.add_argument('--driver', default=os.environ.get('GECKODRIVER', '/snap/bin/geckodriver'))
 p.add_argument('--software', action='store_true')
 p.add_argument('--compat', action='store_true')
+p.add_argument('--native',action='store_true')
 p.add_argument('--seconds', type=float, default=0)
 p.add_argument('--import-tracks',default='')
 p.add_argument('--budget-ms', type=float, default=3000)
@@ -78,7 +79,10 @@ try:
     created=request('POST','/session',{'capabilities':{'alwaysMatch':{'browserName':'firefox','moz:firefoxOptions':{'args':['-headless'],'prefs':{'media.autoplay.default':0,'browser.shell.checkDefaultBrowser':False}}}}})
     session=created['sessionId'];report['browser']=created['capabilities']['browserVersion']
     command('/window/rect',{'width':1366,'height':1000})
-    command('/url',{'url':Path(a.viewer).resolve().as_uri()+('?software=1' if a.software else '')})
+    from urllib.parse import urlsplit,urlunsplit
+    url=a.viewer if a.viewer.startswith('http://127.0.0.1:') else Path(a.viewer).resolve().as_uri()
+    parts=urlsplit(url);url=urlunsplit((parts.scheme,parts.netloc,parts.path,'software=1' if a.software else parts.query,parts.fragment))
+    command('/url',{'url':url})
     wait("!!document.querySelector('.open-main')")
     evaluate("""
       window.__workers=0;window.__forceTracks=0;window.__paints=0;window.__errors=[];
@@ -101,8 +105,8 @@ try:
     report['forceReadyMs']=(time.monotonic()-started)*1000
     assert evaluate("return Number(document.querySelector('.timeline').value)===0 && [...document.querySelectorAll('.force-readout')].every(r=>r.dataset.forceFrame==='0'||(r.dataset.forceFrame==='-1'&&r.closest('.media-card').classList.contains('inactive')))")
     assert evaluate('return window.__workers')==workers
-    report['calculatedTracks']=evaluate('return window.__forceTracks');assert report['calculatedTracks']==(0 if a.import_tracks else 4)
-    if a.import_tracks:assert evaluate("return !performance.getEntriesByType('resource').some(r=>r.name.includes('force-runtime'))")
+    report['calculatedTracks']=evaluate('return window.__forceTracks');assert report['calculatedTracks']==(0 if a.import_tracks or a.native else 4)
+    if a.import_tracks or a.native:assert evaluate("return !performance.getEntriesByType('resource').some(r=>r.name.includes('force-runtime'))")
     target=min(4000,evaluate("return Number(document.querySelector('.timeline').max)*.7"))
     evaluate("{const s=document.querySelector('.timeline');s.value="+str(target)+";s.dispatchEvent(new Event('input',{bubbles:true}));}")
     wait(ready)

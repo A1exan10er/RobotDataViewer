@@ -1,0 +1,89 @@
+name: Native portable packages
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/headcam-companion-support]
+    paths: ['tools/native/**', 'tools/force/**', 'src/**', 'vendor/force/**', '.github/workflows/native-portable.yml', 'package*.json']
+permissions:
+  contents: read
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - {os: ubuntu-22.04, label: linux-x64}
+          - {os: windows-2022, label: windows-x64}
+          - {os: macos-15-intel, label: macos-x64}
+          - {os: macos-15, label: macos-arm64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc diffutils
+          path-type: inherit
+      - run: python -m pip install -r tools/native/requirements.txt
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:python
+      - run: npm run build
+      - run: python tools/release.py
+      - run: python tools/native/build-ffmpeg.py
+        if: runner.os != 'Windows'
+      - run: python tools/native/build-ffmpeg.py
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+      - run: python tools/native/build.py
+      - run: python tools/native/ci-smoke.py ${{ matrix.label }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RobotDataViewer-1.4.0-${{ matrix.label }}
+          path: |
+            dist/RobotDataViewer-1.4.0-*.zip*
+            artifacts/native-smoke-*.json
+          if-no-files-found: error
+  nvidia:
+    needs: portable
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - {os: ubuntu-22.04, label: linux-x64}
+          - {os: windows-2022, label: windows-x64}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: RobotDataViewer-1.4.0-${{ matrix.label }}
+          path: dist
+      - run: |
+          python -m pip install numpy==2.2.6 opencv-contrib-python-headless==4.12.0.88 psutil==7.1.0 pyinstaller==6.16.0 'onnxruntime-gpu[cuda,cudnn]==1.23.2'
+          python tools/native/build.py --nvidia
+          python tools/native/ci-smoke.py ${{ matrix.label }} --addon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RobotDataViewer-1.4.0-${{ matrix.label }}-nvidia
+          path: |
+            dist/*nvidia.zip*
+            artifacts/native-smoke-*.json
+          if-no-files-found: error

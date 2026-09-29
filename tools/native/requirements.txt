@@ -1,0 +1,6 @@
+numpy==2.2.6
+opencv-contrib-python-headless==4.12.0.88
+onnxruntime==1.23.2; sys_platform != 'win32'
+onnxruntime-directml==1.23.0; sys_platform == 'win32'
+psutil==7.1.0
+pyinstaller==6.16.0

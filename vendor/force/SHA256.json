@@ -1,6 +1,7 @@
 {
-  "force.onnx": "f090da97ea5264e191584859e4e3bb8aff39ac284fb3e8b66635e3d3d8c91a35",
+  "force.onnx": "bae72dc2db21be4d0ab57429886b6d9fe25a112379fc32ff99069dbadba71ba9",
   "deepflow.js": "241346b475f0d213629a4dc2a60855a557f44ff68dfb59d7bf27c21ff15718bd",
   "deepflow.wasm": "1a3a77d85ecbadc61f23e6751c2f22de8db29dede695bb203df556b2c4293bba",
-  "model.json": "158a2db7d7bce8f26ce7988180813ed8510ded585fd9c06e6bcefd8f38305a10"
+  "validation.npz": "257195c3159fa0f485e7df1c5db1f6050ca9a6dc8a4cc8a22bb78d2a258f7cce",
+  "model.json": "6a4c850acd5fa13f4e811b23fb2bb0644106589f934d4fb055700091daa46aa2"
 }

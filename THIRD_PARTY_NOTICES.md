@@ -775,3 +775,25 @@ The force weights are derived from the user-supplied
 Their provenance and checksum are recorded in `vendor/force/model.json`.
 The supplied archive contained no license file; its weights are not covered
 by the dependency licenses listed above.
+
+## Optional native force engine (1.4.0)
+
+The native portable packages add the Python interpreter (PSF license), NumPy
+(BSD-3-Clause and bundled numerical-library notices), OpenCV contrib 4.12.0
+(Apache-2.0 and included third-party notices), ONNX Runtime 1.23.x (MIT), psutil
+(BSD-3-Clause) and the PyInstaller bootloader (GPL with the explicit distribution
+exception). Each native package includes the installed distributions' license
+files and a dependency/version manifest. PyTorch is an export/build dependency;
+it is excluded from native runtime packages.
+
+The native FFmpeg/ffprobe executables are built from the included FFmpeg 8.1
+source, with only built-in decoders, local file/pipe protocols and no GPL or
+external codec libraries. FFmpeg is LGPL-2.1-or-later under this configuration.
+The source archive, exact configure flags and checksum accompany each package.
+
+Optional Windows/Linux NVIDIA add-ons carry the NVIDIA CUDA/cuDNN runtime
+libraries under NVIDIA's redistribution terms and their included notices. They
+are separate from the base package. A compatible display driver is not included.
+DirectML and CoreML depend on the supported platform's graphics facilities.
+The supplied model's provenance and lack of an explicit upstream model license
+remain as documented in tools/reference/force-inference/README.md.

@@ -120,10 +120,17 @@ const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':co
               <button class="button secondary small" @click="forceInput?.click()" :disabled="force.preparing.value">{{ t('forceImport') }}</button>
               <button v-if="Object.keys(force.tracks.value).length" class="button secondary small" @click="force.exportFile()">{{ t('forceExport') }}</button>
               <button v-if="force.enabled.value && !force.preparing.value && Object.keys(force.errors.value).length" class="button secondary small" @click="force.retry()">{{ t('forceRetry') }}</button>
+              <template v-if="force.native">
+                <button v-if="force.diagnostics.value" class="button secondary small" @click="force.exportDiagnostics()">{{ t('forceDiagnostics') }}</button>
+                <button v-if="force.enabled.value && !force.preparing.value && Object.keys(force.errors.value).length" class="button secondary small" @click="force.retryBrowser()">{{ t('forceBrowserFallback') }}</button>
+                <small v-if="force.storage.value">{{ t('forceStorage') }}: {{ (force.storage.value.bytes/1048576).toFixed(1) }} / 256 MiB</small>
+                <button class="button secondary small" :disabled="force.preparing.value" @click="force.removeSaved()">{{ t('forceRemoveEpisode') }}</button>
+                <button class="button secondary small" :disabled="force.preparing.value" @click="force.removeSaved(true)">{{ t('forceClearAll') }}</button>
+              </template>
             </div>
             <p class="tactile-note" :inert="!!expanded">{{ t('forceOptionHint') }}</p>
             <div v-if="force.preparing.value" class="force-progress" role="status" :inert="!!expanded">
-              <LoaderCircle class="spin" :size="16" /><span>{{ t('forcePreparing') }}<small v-if="force.progress.value">{{ channelName(force.progress.value.sensor) }} · {{ force.progress.value.stage==='calculating' ? `${force.progress.value.frame}/${force.progress.value.frames}` : t(force.progress.value.stage==='checking'?'forceChecking':'forceLoading') }}</small></span>
+              <LoaderCircle class="spin" :size="16" /><span>{{ t('forcePreparing') }}<small v-if="force.progress.value">{{ channelName(force.progress.value.sensor) }} · {{ force.progress.value.stage==='calculating' ? `${force.progress.value.frame}/${force.progress.value.frames}` : t(force.progress.value.stage==='checking'?'forceChecking':force.progress.value.stage==='transferring'?'forceTransfer':'forceLoading') }}</small><small v-if="force.progress.value?.elapsed!==undefined">{{ t('forceElapsed') }}: {{ Math.round(force.progress.value.elapsed) }} {{ t('seconds') }}<template v-if="force.progress.value.remaining!==undefined"> · {{ t('forceRemaining') }}: {{ Math.ceil(force.progress.value.remaining) }} {{ t('seconds') }}</template><template v-if="force.progress.value.overallFrames"> · {{ force.progress.value.overallFrame }}/{{ force.progress.value.overallFrames }}</template></small></span>
               <button class="button secondary small" @click="force.cancel()">{{ t('cancel') }}</button>
             </div>
             <p v-else-if="force.enabled.value && Object.keys(force.tracks.value).length" class="force-ready" role="status">{{ t('forceReady') }}</p>

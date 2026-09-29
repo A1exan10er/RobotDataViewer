@@ -2,6 +2,16 @@ import { ref } from 'vue';
 import type { Language } from './types';
 export const language = ref<Language>('en');
 const words = {
+  forceDiagnostics: ['Save preparation diagnostics', '保存准备诊断信息'],
+  forceBrowserFallback: ['Retry with browser calculation', '改用浏览器计算'],
+  forceTransfer: ['Transferring selected sensor videos locally', '正在本机传输选定传感器视频'],
+  forceElapsed: ['Elapsed', '已用时'], forceRemaining: ['Estimated remaining', '预计剩余'],
+  forceStorage: ['Saved force results', '已保存力数据'],
+  forceRemoveEpisode: ['Remove saved results for this episode', '删除此片段已保存的力数据'],
+  forceClearAll: ['Clear all saved force results', '清除所有已保存的力数据'],
+  forceRemoved: ['Saved results removed. Enable force display to prepare again.', '已删除保存结果；再次开启力显示可重新计算。'],
+  forceRemoveFailed: ['Saved results could not be removed', '无法删除已保存结果'],
+
   showForce: ['Show estimated force', '显示估算力'], estimatedForce: ['Estimated force', '估算力'], shearForce: ['Shear', '剪切力'],
   forceCurve: ['Estimated normal and shear force over time', '估算正向力与剪切力随时间变化'],
   forceNote: ['Model estimates relative to the first tactile frame; Fz is normal force and shear is its tangential magnitude. These are not calibrated force measurements. Heatmap colors remain image response.', '模型相对于首帧触觉图像的估算值；Fz 为正向力，剪切力为切向力大小。此数值并非经过标定的实测力，热图颜色仍表示图像响应。'],

@@ -1042,3 +1042,66 @@ The tactile cleanup browser check uses the supplied five-episode ARX5 folder (`R
 The capture-timing check can be repeated with `RDV_ARCHIVE=/path/to/rebuilt-task.tar node tools/browser-alignment.mjs`; it expects the five supplied NAS episodes and their extracted folder, plus the original UMI TAR. The Firefox check accepts `--expect-capture-timing` to require the recorded-timestamp badge.
 
 The direct browser script uses this workspace's named original samples. The smooth-playback and profiling scripts default to the named NAS sample; set `RDV_ARCHIVE` to another compatible seven-stream task archive. Run performance profiling without other tests competing for CPU. All browser scripts use isolated temporary profiles, never a personal browser session.
+
+## Native force engine 1.4.0 — 2026-09-29 (validation in progress)
+
+Host: Ryzen 7 9700X (8 physical / 16 logical cores), 15,092 MiB RAM,
+RTX 5060 Ti (8,151 MiB VRAM), NVIDIA driver 580.173.02. Tests and browser runs
+are sequential; no unrelated applications were terminated. Memory pressure
+`avg10/60/300` was zero in the observed sample; substantial swap was already in
+use. Native CPU uses five inference threads, two preprocessing tasks and one
+FFmpeg decoder thread. No frames are omitted.
+
+Measured results (all completed, unless explicitly marked otherwise):
+
+- Exported reordered graph vs unchanged supplied PyTorch model: all eight existing
+  decoded-input oracles pass force tolerance `0.001 N + 0.1%` and contact decisions.
+  Portable provider probes are synthetic; recording-derived inputs remain only
+  under ignored diagnostics and are not distributed.
+- First 48-frame CPU pipeline: 3.328 s processing + 0.681 s initialization. This
+  exploratory run used the pre-existing FFmpeg 7 decoder.
+- Extracted Linux package, all 48 contact-fixture frames: **4.545 s** authenticated
+  upload/calculation/result round trip; **5.024 s** complete launcher/test process,
+  peak owned process-tree RSS **511.4 MiB**. The previous 1.3 browser CPU fixture
+  took 59.759 s: **11.9×** faster including launcher/test setup, **13.1×** for the
+  preparation round trip. Host available RAM 3,616 MiB; swap used 7,338 MiB.
+- Restarted extracted launcher: four disk hits, lookup **2.802 ms**, no inference.
+  The four tracks occupy 3,934 bytes. A separate four-frame repeat-image fixture
+  also passed calculation and restart reuse from the actual extracted ZIP.
+- Full episode 0157, **2,432 frames**, CPU using bundled FFmpeg 8.1: **153.908 s**
+  total, peak engine/decoder process-tree RSS **416.0 MiB**. Available RAM before
+  run 6,141 MiB; swap used 7,121 MiB. Earlier FFmpeg 7 CPU run: 165.731 s.
+- Full episode 0157, NVIDIA CUDA with TF32 disabled: **78.415 s** total, including
+  **24.072 s** initialization/validation. Sum of frame inference: 34.009 s;
+  preprocessing task time: 105.388 s (overlaps inference and other preprocessing);
+  decode/read time: 1.126 s. Peak owned RSS **2,111.1 MiB**, peak total GPU memory
+  **733 MiB** (includes the desktop). Available RAM 6,257 MiB; swap used 7,024 MiB.
+- CPU vs CUDA on identical FFmpeg 8.1 frames: all **4,864** force values pass;
+  maximum difference **0.000036523 N**. CUDA also passed the eight original
+  identical-input oracles with maximum force error **0.000000850 N**.
+- A cold 48-frame CUDA exploration took 8.249 s including 6.419 s initialization,
+  despite only 1.414 s processing. It fails the 8× complete-preparation target.
+  Automatic selection now keeps short jobs on CPU when their measured CPU
+  estimate is below the five-second GPU startup allowance.
+
+Decoder differences are separate from inference conversion: FFmpeg 7 vs the
+minimal bundled FFmpeg 8.1 produced a maximum 0.277762 N difference over this
+recording. That comparison is **not** reported as numerical model agreement.
+Identical decoded-input comparisons pass as above; no physical force calibration
+claim follows from model agreement.
+
+Regressions: exact duplicate processed images reuse the real nonzero reference
+estimate; ordered every-frame output, cancellation and injected GPU failure
+fallback pass. Disk tests cover restart, sensor/timing/hash/model/dimension
+separation, incomplete results, interrupted writes, eviction and deletion.
+HTTP tests cover token/origin/Host checks, path rejection, upload bounds/checksum,
+idempotent cancellation and persistent connections. The initial browser check
+found an unread POST body causing HTTP 501 on connection reuse; fixed with a
+persistent-connection regression. The first sandboxed Python run could not create
+loopback sockets; the subsequent run with socket access passed.
+
+Current completed checks: 13 Node test files; 17 Python tests; native engine
+regressions; production build; Linux extracted-package calculation and restart.
+Windows, macOS Intel/ARM, DirectML/CoreML, and the NVIDIA packaged runtime remain
+pending at this point. Earlier unfinished/stalled checks above remain failures
+or incomplete checks; they have not been relabeled as passing.

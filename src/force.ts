@@ -5,6 +5,7 @@ import { ForceCache, parseForceTracks, serializeForceTracks, videoHash, type For
 import type { RecordingSource } from './source';
 import type { Episode, EpisodeData, Media, Timing } from './types';
 import type { Playback } from './playback';
+import { nativeForce, type NativeItem, type StorageUsage } from './nativeForce';
 import { playbackMark } from './playbackMetrics';
 
 type Assets={worker:string;[key:string]:unknown};
@@ -53,6 +54,9 @@ export function compatibleTrack(track:ForceTrack,media:Media,timing:Timing,blob:
     timing.media.every((t,i)=>Math.abs(t-track.time[i])<.002);
 }
 export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|null>,data:Ref<EpisodeData|null>,playback:Playback){
+  const storage=shallowRef<StorageUsage|null>(null),diagnostics=shallowRef<unknown>(null);
+  if(nativeForce)void nativeForce.usage().then(v=>storage.value=v).catch(()=>{});
+  let browserFallback=false;
   const enabled=ref(false),preparing=ref(false),progress=shallowRef<ForceProgress|null>(null);
   const tracks=shallowRef<Record<string,ForceTrack>>({}),errors=shallowRef<Record<string,string>>({}),notice=ref('');
   const cache=new ForceCache(),externalFiles=new Set<Blob>();let hashes=new WeakMap<Blob,string>(),abort=new AbortController(),serial=0;
@@ -67,7 +71,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
   }
   function cancel(){++serial;abort.abort();runner?.dispose();runner=undefined;preparing.value=false;progress.value=null;playback.setExternalHold(false);}
   async function prepare(){
-    cancel();tracks.value={};errors.value={};notice.value='';
+    cancel();tracks.value={};errors.value={};notice.value='';diagnostics.value=null;
     if(!enabled.value||!source.value||!episode.value||!data.value)return;
     const current=serial,selected=episode.value,recording=source.value,timings=data.value.timings;
     abort=new AbortController();const signal=abort.signal;
@@ -76,14 +80,14 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
     const result:Record<string,ForceTrack>={},failures:Record<string,string>={};
     playbackMark('force-preparation-start',selected.id);
     try{
-      const missing:{media:Media;blob:Blob;sha:string}[]=[];
+      const missing:NativeItem[]=[];
       for(const media of sensors){
         signal.throwIfAborted();progress.value={sensor:media.id,frame:0,frames:timings[media.id].media.length,stage:'checking'};
-        const blob=recording.file(media.path);if(!blob){failures[media.id]='forceCalculationFailed';continue;}
+        const blob=recording.file(media.path);if(media.failed||!blob){failures[media.id]='forceCalculationFailed';continue;}
         let sha=hashes.get(blob);if(!sha){sha=await videoHash(blob,signal);hashes.set(blob,sha);}
         const cached=cache.get(sha,media.id,manifest.weightsSha256);
         if(cached&&compatibleTrack(cached,media,timings[media.id],blob)){result[media.id]=cached;playbackMark('force-cache-hit',media.id);}
-        else missing.push({media,blob,sha});
+        else missing.push({media,blob,sha,timing:timings[media.id]});
       }
       if(missing.length)for(const blob of [...externalFiles,...recording.forceFiles?.()||[]]){
         signal.throwIfAborted();
@@ -92,6 +96,14 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
           if(cached&&compatibleTrack(cached,m.media,timings[m.media.id],m.blob)){result[m.media.id]=cached;missing.splice(i,1);}}
         if(!missing.length)break;
       }
+      if(missing.length&&nativeForce){
+        try{
+          for(const track of await nativeForce.lookup(missing,signal)){
+            const index=missing.findIndex(m=>m.sha===track.video.sha256&&compatibleTrack(track,m.media,m.timing,m.blob));
+            if(index>=0){cache.put(track);result[track.sensor]=track;missing.splice(index,1);playbackMark('force-disk-cache-hit',track.sensor);}
+          }
+        }catch{signal.throwIfAborted();}
+      }
       if(missing.length){
         // Finish the normal two-job tactile calibration before adding inference memory.
         if(playback.preparing.value)await new Promise<void>((resolve,reject)=>{
@@ -99,6 +111,17 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
           const cancelWait=()=>{stop();reject(signal.reason);};signal.addEventListener('abort',cancelWait,{once:true});
         });
         signal.throwIfAborted();progress.value={sensor:missing[0].media.id,frame:0,frames:0,stage:'loading'};
+        if(nativeForce&&!browserFallback){
+          const response=await nativeForce.calculate(missing,signal,p=>{if(current===serial)progress.value=p;});
+          signal.throwIfAborted();diagnostics.value=response.diagnostics;
+          for(const track of response.tracks){
+            const item=missing.find(m=>m.media.id===track.sensor&&m.sha===track.video.sha256);
+            if(!item||!compatibleTrack(track,item.media,item.timing,item.blob))throw new Error('forceInvalidFile');
+            cache.put(track);result[track.sensor]=track;playbackMark('force-track-complete',track.sensor,{frames:track.time.length,backend:'native'});
+          }
+          for(const item of missing)if(!result[item.media.id])failures[item.media.id]='forceCalculationFailed';
+          storage.value=await nativeForce.usage().catch(()=>storage.value);
+        }else{
         const assets=await loadAssets();signal.throwIfAborted();
         const {worker:_,...payload}=assets;
         let backend='wasm';
@@ -125,6 +148,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
             playbackMark('force-track-complete',media.id,{frames:track.time.length,seconds:response.seconds,backend:response.backend});
           }catch(error){signal.throwIfAborted();failures[media.id]='forceCalculationFailed';console.warn('Force preparation:',media.id,error);}
         }
+        }
       }
       signal.throwIfAborted();tracks.value=result;errors.value=failures;
       playbackMark('force-preparation-complete',selected.id,{tracks:Object.keys(result).length,failures:Object.keys(failures).length});
@@ -136,10 +160,30 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
       }
     }finally{if(current===serial){runner?.dispose();runner=undefined;preparing.value=false;progress.value=null;playback.setExternalHold(false);}}
   }
-  watch(source,()=>{cancel();cache.clear();externalFiles.clear();hashes=new WeakMap();enabled.value=false;tracks.value={};errors.value={};},{flush:'sync'});
+  watch(source,()=>{cancel();cache.clear();externalFiles.clear();hashes=new WeakMap();enabled.value=false;tracks.value={};errors.value={};browserFallback=false;},{flush:'sync'});
   watch([enabled,episode],()=>{void prepare();},{flush:'post'});
   onBeforeUnmount(cancel);
-  return {enabled,preparing,progress,tracks,errors,notice,
+  async function removeSaved(all=false){
+    const selected=episode.value,recording=source.value,timings=data.value?.timings;
+    cancel();enabled.value=false;tracks.value={};errors.value={};externalFiles.clear();
+    try{
+      const items:NativeItem[]=[];
+      if(!all&&selected&&recording&&timings)for(const media of selected.media.filter(m=>m.kind==='tactile'&&!m.failed)){
+        const blob=recording.file(media.path);if(!blob)continue;
+        const sha=hashes.get(blob)||await videoHash(blob);items.push({media,blob,sha,timing:timings[media.id]});
+      }
+
+      if(all)cache.clear();else items.forEach(m=>cache.remove(m.sha,m.media.id));
+      if(nativeForce)storage.value=await nativeForce.remove(all?undefined:items);
+      notice.value='forceRemoved';
+    }catch{notice.value='forceRemoveFailed';}
+  }
+  return {enabled,preparing,progress,tracks,errors,notice,storage,diagnostics,removeSaved,native:!!nativeForce,
+    retryBrowser:()=>{browserFallback=true;void prepare();},
+    exportDiagnostics(){
+      const url=URL.createObjectURL(new Blob([JSON.stringify({version:1,preparation:diagnostics.value,storage:storage.value},null,2)],{type:'application/json'}));
+      const link=document.createElement('a');link.href=url;link.download='force-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    },
     cancel:()=>{enabled.value=false;cancel();},retry:prepare,
     async importFile(blob:Blob){const current=serial;try{await importBlob(blob);externalFiles.add(blob);notice.value='forceImported';if(enabled.value)await prepare();}catch{if(current===serial)notice.value='forceInvalidFile';}},
     exportFile(){const values=Object.values(tracks.value);if(!values.length)return;

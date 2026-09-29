@@ -9,7 +9,7 @@ export type ForceTrack = {
   reference: { frame: 0; time: number }; unit: 'N';
   time: Float64Array; shear: Float32Array; fz: Float32Array; valid: Uint8Array;
 };
-export type ForceProgress = { sensor: string; frame: number; frames: number; stage: 'checking'|'loading'|'calculating' };
+export type ForceProgress = { sensor: string; frame: number; frames: number; stage: 'checking'|'loading'|'calculating'|'transferring'; elapsed?:number; remaining?:number; overallFrame?:number; overallFrames?:number; backend?:string };
 const hash = /^[0-9a-f]{64}$/;
 const positiveInt = (n: unknown): n is number => Number.isSafeInteger(n) && Number(n)>0;
 
@@ -70,6 +70,9 @@ export class ForceCache {
   get(sha:string,sensor:string,weightsSha:string):ForceTrack|undefined {
     const key=`${sha}:${sensor}:${FORCE_MODEL}:${weightsSha}:${FORCE_PIPELINE}`,entry=this.entries.get(key);
     if(entry){this.entries.delete(key);this.entries.set(key,entry);return entry.track;}
+  }
+  remove(sha:string,sensor:string){
+    for(const [key,entry] of this.entries)if(entry.track.video.sha256===sha&&entry.track.sensor===sensor){this.bytes-=entry.bytes;this.entries.delete(key);}
   }
   clear(){this.entries.clear();this.bytes=0;}
 }

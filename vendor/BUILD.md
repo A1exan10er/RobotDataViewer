@@ -25,3 +25,14 @@ make -j8 OPTFLAGS=-O3 dist/libav-6.9.8.1-viewer.js dist/libav-6.9.8.1-viewer.was
 Copy `dist/libav-6.9.8.1-viewer.js` to `vendor/libav.js`, `dist/libav-6.9.8.1-viewer.wasm.js` to `vendor/libav-factory.js`, and `dist/libav-6.9.8.1-viewer.wasm.wasm` to `vendor/decoder.wasm` in RobotDataViewer. Run `npm run build` to relink the standalone viewer with the replacement library. The app contains no restrictions on replacing or debugging the library.
 
 Only demuxing, parsing, decoding and pixel conversion are enabled. No encoders, network protocols, pthread workers or command-line transcoding runtime are used.
+
+### Native 1.4.0 force runtime
+
+`tools/force/export-model.py` exports the final-head operation reordering and
+checks the result against the unchanged supplied PyTorch model. It also creates
+`vendor/force/validation.npz` from eight deterministic synthetic input tensors;
+these bundled probes contain no recording frames. The existing real decoded
+oracles remain under `artifacts/` for independent validation only. Run the
+export before `tools/force/build-assets.mjs` and verify `vendor/force/SHA256.json`.
+Native build, platform packaging, FFmpeg source build, GPU add-ons and extracted
+smoke tests are documented in `docs/NATIVE_FORCE.md`.

@@ -42,3 +42,18 @@ is required for viewing or browser calculation. Keep `force-runtime.js` next to
 Values are estimates, not calibrated measurements. The first frame is the
 reference and may already contain contact; the model can predict a nonzero
 baseline. Display gain and rim masking affect only the heatmap, not force.
+
+## Faster native package (1.4.0)
+
+For faster force preparation, extract the native ZIP for your operating system
+and run its RobotDataViewer launcher (Windows: .exe; macOS: Start Viewer.command).
+Keep the launcher open. It includes Python, OpenCV, ONNX Runtime and FFmpeg;
+recipients install no development tools. Your selected tactile videos are sent
+only to the launcher on this computer. The model loads only when force is requested.
+
+Completed estimates are remembered across restarts in a 256 MiB disk cache.
+The force toolbar shows storage usage and lets you remove this episode's results
+or all saved force results. Removal switches force off without recalculating.
+Preparation shows elapsed time, overall frame progress and an estimated remaining
+time. It still processes every frame and ends paused. Optional NVIDIA libraries
+are supplied separately; see NATIVE_FORCE.md for installation and limitations.

@@ -44,6 +44,7 @@ with tarfile.open(root / 'sources' / 'RobotDataViewer-source.tar.gz', 'w:gz') as
     for name in ('build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
         source.add(root / 'tools' / name, arcname=f'RobotDataViewer/tools/{name}')
     source.add(root / 'tools' / 'reference', arcname='RobotDataViewer/tools/reference', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith('.zip') else info)
+    source.add(root / 'tools' / 'native', arcname='RobotDataViewer/tools/native', filter=lambda info: None if '__pycache__' in info.name else info)
     source.add(root / 'tools' / 'force', arcname='RobotDataViewer/tools/force', filter=lambda info: None if '__pycache__' in info.name else info)
 with ZipFile(output, 'w', compression=ZIP_DEFLATED) as archive:
     archive.writestr('RobotDataViewer/START_HERE.txt', start)
@@ -53,7 +54,7 @@ with ZipFile(output, 'w', compression=ZIP_DEFLATED) as archive:
     for notice in sorted((root/'vendor/force/licenses').glob('*.txt')):
         archive.write(notice, 'RobotDataViewer/vendor/force/licenses/'+notice.name)
     archive.write(root / 'THIRD_PARTY_NOTICES.md', 'RobotDataViewer/THIRD_PARTY_NOTICES.md')
-    for doc in ('QUICKSTART_EN.md', 'QUICKSTART_ZH.md', 'FORMAT.md'):
+    for doc in ('QUICKSTART_EN.md', 'QUICKSTART_ZH.md', 'FORMAT.md', 'NATIVE_FORCE.md'):
         archive.write(root / 'docs' / doc, f'RobotDataViewer/{doc}')
     archive.write(root / 'vendor' / 'BUILD.md', 'RobotDataViewer/vendor/BUILD.md')
     archive.write(root / 'vendor' / 'SHA256.json', 'RobotDataViewer/vendor/SHA256.json')
