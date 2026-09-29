@@ -15,6 +15,8 @@ function resources(){
   }
   return {workerUrl,compiled:compiled!};
 }
+/** Optional force preparation shares the already compiled decoder, never its cursor. */
+export function forceDecoderResources(){return resources().compiled;}
 /** Tactile decoding is sequential even when the browser can play the codec. */
 export function sequentialTactile(codec:string){return /^(avc[13]|hev1|hvc1)(\.|$)/i.test(codec);}
 export class SoftwareTransport extends DecoderTransport {

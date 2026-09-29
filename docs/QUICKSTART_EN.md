@@ -23,3 +23,22 @@ Use the language button to switch to Chinese. You can open another folder or TAR
 Use a current desktop Firefox, Chrome, or Edge browser. No plugins or external codecs are needed. “Preparing synchronized views” means the selected frames are being prepared together; “Synchronizing” during playback means a decode buffer is being replenished. Direct archive opening supports uncompressed `.tar` files.
 
 If a sensor arc is difficult to detect, the viewer also checks matching nearby episodes already present in the selected folder or TAR. You do not need to open those episodes first. Only checked arc geometry is reused; each episode keeps its own baseline and noise estimate. Hover the recovery notice to see the reference episode. Open the parent folder or complete task TAR to make neighboring recordings available.
+
+## Optional force display
+
+Force is off initially. Enable **Show estimated force** to prepare the selected
+episode or reuse matching saved results. Calculation pauses playback, processes
+every sensor frame, and can take several minutes. You can cancel or turn the
+option off; ordinary RGB/tactile playback remains available. Preparation ends
+paused: press Play to see Fz (normal force) and shear magnitude in N, with curves,
+synchronized to the same displayed video frames. Values also appear when expanded.
+
+Use **Save force tracks** to share `*.rdv-force.json`; recipients import it or put
+it beside the recording in its folder/TAR. Videos are checked by content, so
+renaming does not attach forces to unrelated recordings. No Python or network
+is required for viewing or browser calculation. Keep `force-runtime.js` next to
+`viewer.html` for calculation; existing tracks work without loading that model.
+
+Values are estimates, not calibrated measurements. The first frame is the
+reference and may already contain contact; the model can predict a nonzero
+baseline. Display gain and rim masking affect only the heatmap, not force.

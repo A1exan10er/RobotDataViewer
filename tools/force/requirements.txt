@@ -1,0 +1,5 @@
+numpy==2.2.6
+opencv-contrib-python-headless==4.12.0.88
+onnxruntime==1.23.2
+# Only exporting / numerical validation additionally needs:
+# torch==2.8.0, torchvision==0.23.0, onnx==1.19.0

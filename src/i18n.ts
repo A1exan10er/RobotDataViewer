@@ -2,6 +2,19 @@ import { ref } from 'vue';
 import type { Language } from './types';
 export const language = ref<Language>('en');
 const words = {
+  showForce: ['Show estimated force', '显示估算力'], estimatedForce: ['Estimated force', '估算力'], shearForce: ['Shear', '剪切力'],
+  forceCurve: ['Estimated normal and shear force over time', '估算正向力与剪切力随时间变化'],
+  forceNote: ['Model estimates relative to the first tactile frame; Fz is normal force and shear is its tangential magnitude. These are not calibrated force measurements. Heatmap colors remain image response.', '模型相对于首帧触觉图像的估算值；Fz 为正向力，剪切力为切向力大小。此数值并非经过标定的实测力，热图颜色仍表示图像响应。'],
+  forcePreparing: ['Preparing force estimates; playback is paused', '正在准备力估算；播放已暂停'],
+  forceChecking: ['Checking prepared force tracks', '正在检查已准备的力数据'], forceLoading: ['Loading local force model', '正在加载本地力估算模型'],
+  forceReady: ['Force tracks ready. Press Play to view together.', '力数据已准备完成，点击播放即可同步查看。'],
+  forceNotPrepared: ['Force values are not prepared', '力数据尚未准备'],
+  forceOptionHint: ['Optional: prepares every sensor frame and may take several minutes. Saved tracks avoid recalculation.', '可选功能：需计算全部传感器帧，可能耗时数分钟；已保存的力数据可直接复用。'],
+  forceCalculationFailed: ['Force estimation unavailable for this sensor', '此传感器的力估算不可用'],
+  forceRuntimeMissing: ['Extract the complete portable ZIP, including force-runtime.js, to calculate forces.', '请完整解压便携版 ZIP（包括 force-runtime.js），以计算力数据。'],
+  forceInvalidFile: ['Force tracks are invalid or use a different model', '力数据无效或使用了不同的模型'],
+  forceImported: ['Force tracks imported. Enable force display to view them.', '力数据已导入，开启力显示即可查看。'],
+  forceImport: ['Import force tracks', '导入力数据'], forceExport: ['Save force tracks', '保存力数据'], forceRetry: ['Retry force preparation', '重新准备力数据'], cancel: ['Cancel', '取消'],
   brand: ['Robot Data Viewer', '机器人数据查看器'], eyebrow: ['A closer look at motion.', '看见动作的每一个细节。'],
   intro: ['Explore real recordings. See every perspective.', '探索真实记录，观察每一个视角。'],
   welcome: ['RGB, movement, and touch — together on one timeline.', 'RGB、运动与触觉，在同一时间轴上同步呈现。'],

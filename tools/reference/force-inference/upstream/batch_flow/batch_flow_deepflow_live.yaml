@@ -1,0 +1,13 @@
+# 实时推理用 DeepFlow 配置（与 batch_flow_deepflow_folders.yaml 算法参数一致）
+# 用法: python main_new.py --flow-config batch_flow/batch_flow_deepflow_live.yaml
+
+blur_ksize: 0
+resize: 640x360
+
+# DeepFlow 降采样比例：越小越快（0.35 ≈ 在 224×126 上算，再放大回 640×360）
+deepflow_scale: 0.35
+use_clahe: true
+
+# 可视化箭头
+arrow_scale: 10.0
+arrow_step: 30

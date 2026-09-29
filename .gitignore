@@ -9,3 +9,5 @@ __pycache__/
 vendor/decoder-worker.js
 vendor/decoder.wasm.b64
 sources/RobotDataViewer-source.tar.gz
+
+public/force-runtime.js

@@ -760,3 +760,18 @@ The third_party/ subdirectory contains code with other licenses. None of it is
 used by default, but certain options use it (e.g., the optional closure compiler
 flag will run closure compiler from third_party/).
 
+
+## Optional force inference
+
+The portable `force-runtime.js` bundles ONNX Runtime Web 1.23.2 (MIT),
+OpenCV 4.12.0 core/imgproc/video and the DeepFlow source from opencv_contrib
+(Apache 2.0 and retained BSD notices), and zlib. Streaming checksums use
+@noble/hashes 2.0.1 (MIT). Complete license texts and ONNX transitive notices
+are included under `vendor/force/licenses/`. Rebuild instructions and pinned
+source identities are in `tools/force/README.md` in the application sources.
+
+The force weights are derived from the user-supplied
+`NEW_sensor_inference_360.zip`, model `PSP_deep_flow_diff_shear_valloss_0.6344`.
+Their provenance and checksum are recorded in `vendor/force/model.json`.
+The supplied archive contained no license file; its weights are not covered
+by the dependency licenses listed above.

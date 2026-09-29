@@ -9,6 +9,7 @@ import { playbackMark } from './playbackMetrics';
 export function usePlayback() {
   const time = ref(0), duration = ref(0), rate = ref(1), playing = ref(false), busy = ref(false), generation = ref(0);
   const preparing = ref(false), revealed = ref(false), preparedCount = ref(0), channelCount = ref(0);
+  const externalHold=ref(false);
   const channels = new Map<string, SynchronizedChannel>(), calibrations = new CalibrationQueue();
   const stalled = new Map<SynchronizedChannel, number>();
   let raf = 0, last = performance.now(), buffering = false, firstMovement = false;
@@ -29,6 +30,7 @@ export function usePlayback() {
   }
   function pause() { playing.value = false; busy.value = false; buffering = false; pauseTransports(); }
   function play() {
+    if(externalHold.value)return;
     if (!duration.value) return;
     if (time.value >= duration.value - 1) { seek(0, true); return; }
     last = performance.now(); buffering = true; busy.value = !preparing.value; playing.value = true; firstMovement = true; playbackMark('play');
@@ -98,6 +100,7 @@ export function usePlayback() {
   onBeforeUnmount(() => { reset(); cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', visibility); });
   return {
     time, duration, rate, playing, busy, generation, preparing, revealed, preparedCount, channelCount,
+    externalHold,setExternalHold:(value:boolean)=>{externalHold.value=value;if(value)pause();},
     channel: (id: string) => channels.get(id)!,
     bind: (b: SynchronizedChannel, failed: () => void, changed: (state: ChannelState) => void, render: (generation: number, time: number) => void) => { if (owned(b)) b.bind(changed, failed, render); },
     register, pause, play, seek, step, reset,

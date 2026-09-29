@@ -11,7 +11,7 @@ Pinned upstreams:
 
 Corresponding libav.js, FFmpeg and emfiberthreads source archives are in `sources/`. The libav.js archive includes the exact `viewer` configuration, upstream patches, and build scripts. Emscripten is a development compiler, not a customer requirement.
 
-The release also includes `sources/RobotDataViewer-source.tar.gz` with the frontend source and build inputs needed to relink the app. Extract it and run `npm ci` before replacing decoder files.
+The release also includes `sources/RobotDataViewer-source.tar.gz` with the frontend source and build inputs needed to relink the app. Extract it and run `npm ci` before replacing decoder files. In version 1.3.0, restore the optional force binaries from the portable package first with `python3 tools/force/unpack-runtime.py /path/to/RobotDataViewer/force-runtime.js`. This avoids storing the same model twice in the ZIP. See `tools/force/README.md` for rebuilding those components from source.
 
 To rebuild the decoder, extract the libav.js archive into a build directory, install/activate Emscripten 4.0.22, and source its `emsdk_env.sh`. Place the supplied FFmpeg and emfiberthreads archives in that directory's `build/` folder. Then run:
 

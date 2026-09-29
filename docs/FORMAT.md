@@ -103,3 +103,20 @@ when a donor is needed. Probe contexts do not change the selected video cursor.
 Compact geometry/rim descriptors share the existing 32 MiB model-cache budget.
 Explicitly different device IDs never match. Missing device IDs require matching
 recording sessions as well as task/operator/robot/channel and image alignment.
+
+### Optional force tracks (version 1)
+
+`*.rdv-force.json` is a separate sidecar, with `format: robot-data-viewer-force`,
+`version: 1`, and a `tracks` array. Each track includes `sensor`, `video`
+(SHA-256, bytes, frames, width, height), `model` (id, weight SHA-256, pipeline),
+`reference` (frame 0 and time), `unit: N`, and equally sized `time`, `shear`,
+`fz`, `valid` arrays. Times are strictly increasing source presentation times
+in seconds, normalized to the first frame. Each decoded frame has one sample;
+validity zero means unavailable. Estimated tracks do not replace recorded signals.
+
+Input validation checks finite values, monotonic times, dimensions, complete
+frame counts, sensor identity and content hashes. Compatible completed tracks
+use a separate 32 MiB LRU, cleared on source replacement. Calculation uses raw
+images independently of tactile median baselines and masks. The display samples
+the frame actually painted, never the nearest future sample. The three-second
+ordinary startup target excludes explicitly requested full force preparation.

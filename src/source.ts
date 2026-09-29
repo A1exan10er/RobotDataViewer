@@ -9,12 +9,14 @@ export interface RecordingSource {
   file(path:string):Blob|undefined;
   data(path:string,signal?:AbortSignal):Promise<EpisodeData>;
   dispose():void;
+  forceFiles?():Blob[];
 }
 class OriginalSource implements RecordingSource {
   kind='original' as const;
   readonly manifest:Manifest;private files:Map<string,Blob>;
   constructor(manifest:Manifest,files:Map<string,Blob>){this.manifest=manifest;this.files=files;}
   file(path:string){return this.files.get(path);}
+  forceFiles(){return [...this.files].filter(([path])=>path.endsWith('.rdv-force.json')).map(([,blob])=>blob);}
   data(path:string,signal?:AbortSignal){return loadRaw(this.files,this.manifest.episodes.find(e=>e.data===path)!,signal);}
   dispose(){this.files.clear();}
 }
@@ -66,7 +68,7 @@ export async function openRecording(files:File[], archive=false,signal?:AbortSig
         const metadata=path&&marker!==undefined&&marker>=0?pkg.file(path.slice(0,marker)+'metadata.json'):undefined;
         if(metadata){try{ep.capture=captureContext(await readJson(metadata));}catch{}}
       }
-      return {kind:'prepared',manifest:pkg.manifest,file:p=>pkg.file(p),data:p=>pkg.data(p),dispose:()=>{}};
+      return {kind:'prepared',manifest:pkg.manifest,file:p=>pkg.file(p),data:p=>pkg.data(p),forceFiles:()=>files.filter(f=>f.name.endsWith('.rdv-force.json')),dispose:()=>{}};
     }catch{/* This may be an original recording with an unrelated manifest. */}
   }
   return discover(map,signal);

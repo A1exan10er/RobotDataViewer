@@ -1,5 +1,144 @@
 # Validation
 
+## Portable 1.3.0: optional synchronized force estimates
+
+Validated on 2026-09-29. Force remains off initially. Enabling it holds playback,
+processes complete sensor videos sequentially in one worker/session, and leaves
+playback paused. Saved tracks are matched by video SHA-256, sensor, dimensions,
+frame count, timestamps and exact model/preprocessing identity. The separate
+32 MiB track cache is cleared on recording-source replacement. Heatmap masks,
+baselines, settings and simultaneous RGB/tactile readiness are unchanged.
+
+### Reference agreement and model limitations
+
+The supplied archive is preserved unchanged under `tools/reference/force-inference/`.
+Only `PSP_deep_flow_diff_shear_valloss_0.6344` is exported. The raw first-frame,
+640×360, CLAHE/DeepFlow 0.35, restored-vector and rounded relative-difference
+pipeline is independent of display processing. Output scales are 2.6 N shear and
+5.7 N Fz, with the supplied segmentation contact gate and nonnegative clamp.
+
+Eight identical decoded-input cases (unchanged, weak, shifted, odd dimensions,
+and all four episode-0157 sensors) pass the independent PyTorch/OpenCV oracle,
+including browser DeepFlow WASM + ONNX WASM. Contact decisions agree, and every
+force error satisfies **0.001 N + 0.1%**. The largest observed absolute error is
+**0.0030051 N** at an approximately 2.31 N prediction. Relative grayscale channels
+are identical. Iterative native-SIMD/WASM flow kernels differ locally (maximum
+1.654 pixels, mean no greater than 0.006 pixels); acceptance is based on the
+resulting force, not an invented elementwise flow tolerance. Evidence:
+`artifacts/force-reference/` and `artifacts/force-browser-oracle-3/results.json`.
+
+Different video decoders do not provide identical pixels. One short-fixture
+frame differs by about **0.01472 N Fz** between FFmpeg/BGR and LibAV/RGBA pipelines;
+this is recorded separately from the identical-input numerical conversion checks.
+The reference's untared zero input itself predicts approximately **0.27 N Fz**
+and **0.17 N shear**. We preserve that behavior and do not fabricate zeros from
+an apparently unchanged image. Opening contact can already be present. No
+measured-force dataset was supplied, so device-independent physical accuracy,
+no-contact specificity and force calibration remain **unvalidated**.
+
+ONNX extended graph optimization is pinned in browser and Python. The initial
+native `all` layout optimization failed one combined case (0.0033786 N error);
+that run is not a pass. Extended optimization meets the original tolerance.
+WebGPU is attempted only with an available adapter and a passing zero-input
+oracle; initialization or execution failure falls back to a fresh WASM worker.
+**Hardware WebGPU was not available in these isolated tests and is not claimed
+as validated.** The measured calculation runs used WASM or native CPU.
+
+### Playback, preparation and failures
+
+All browser runs were sequential, with no build overlapping a browser run.
+Chromium blocks app HTTP/HTTPS/WebSocket requests; all checked runs recorded
+zero remote requests and zero uncaught page errors. Normal English and expanded
+Chinese layouts were visually inspected, including force curves and live frame
+markers. Tests require the expected panel count, current readiness generation
+and actual painted source timestamps; force samples never lead painted frames.
+
+- Chromium contact fixture: seven panels, 12 frames per sensor; ordinary joint
+  startup **859 ms**, complete force preparation **59.759 s**. Initialization
+  cancellation, paused gain independence, cache reuse and worker release pass.
+- Firefox 156 contact fixture: startup **702 ms**, force preparation **62.226 s**,
+  cached force enable **13 ms**. Playback advances 1983 ms in 2013 ms and continues
+  painting all sensors (the fixture is intentionally 2 fps).
+- Chromium forced software: startup **860 ms**. An injected failure on one sensor
+  leaves three complete tracks and unavailable values for the failed sensor.
+  Seeking, stepping and changing speed during preparation keep the clock paused
+  at the requested frame. Healthy cached tracks are not recalculated on retry.
+- Chromium compatibility/TAR import: startup **746 ms**, prepared tracks ready
+  in **112 ms**, with no inference runtime loaded. Automatic sidecar discovery
+  inside TAR also passes: **872 ms** startup and **119 ms** force enable.
+- Full episode 0157: Python processed all **2,432 frames** across four sensors in
+  **412.185 s**, producing a separate **118,732-byte** sidecar without changing
+  originals. Firefox normal/software startup is **1428 / 1400 ms**; importing
+  these tracks takes **69 / 66 ms**, and cached enable **15 / 20 ms**. Playback
+  advances 6000 / 5999 ms in 6017 / 6033 ms, with 718 / 698 tactile paints.
+
+The full recording has real timestamp offsets. At episode time zero its right
+hand's left sensor is outside its recorded interval and correctly shows no force
+value. The first test incorrectly required a value there and failed; the corrected
+check allows unavailable values only on explicitly inactive panels. The original
+failed result is retained as `artifacts/firefox/force-reported-import.json`.
+Other evidence: `artifacts/firefox/force-{contact-calculation,reported-import-fixed,
+reported-software}.json`, `artifacts/force-contact-{native,software-failure,
+compat-import}/results.json`, `artifacts/force-tar-auto/results.json`, and
+`artifacts/force-build/cli-reported.log`.
+
+Early browser initialization failures came from resolving a WASM filename against
+a blob module URL; both the module and WASM paths are now explicit local blob URLs.
+Two oracle harness runs timed out after inadvertently copying the 110 MiB asset
+object through the debugger; returning no asset object fixed the harness. Those
+failed runs remain in `artifacts/force-browser*` and are not counted as passes.
+Only test-owned browsers were closed; other applications were left running.
+
+### Extracted portable package
+
+The extracted 1.3.0 ZIP passes Chromium compatibility-mode calculation with all
+network requests blocked: joint startup **843 ms**, full 48-frame force
+preparation **58.613 s**, and four completed tracks. Cancellation after an actual
+frame was processed releases the worker and restores paused controls. The sum of
+RSS across this test-owned browser process tree peaked at **3636 MiB**, sampled
+once per second; shared mappings are counted per process, so this is not unique
+physical memory. No peak inference-memory claim is made from endpoint RAM alone.
+
+Firefox compatibility playback of the full reported recording from the extracted
+ZIP starts in **1472 ms**, loads Python tracks in **68 ms**, and advances **6000 ms
+in 6014 ms** with **718 tactile paints**. A separate force-disabled joint-readiness
+regression measures **1384 ms cold / 484 ms cached**, requires exactly four
+calibration-cache hits, and verifies no extra opening sampling or decoder rewinds.
+Evidence: `artifacts/force-portable-compat-calculation/results.json`,
+`artifacts/firefox/force-portable-{reported-compat,joint-cache}.json`.
+
+The portable archive is approximately **84.8 MiB compressed / 133.4 MiB extracted**.
+The ordinary HTML is approximately 5.7 MiB; the optional 110 MiB local JavaScript
+runtime contains the model, DeepFlow and ONNX assets. The original reference ZIP,
+older XYZ model, Python caches, recordings, diagnostics and credentials are not
+included. The package contains dependency notices and rebuild sources; model/WASM
+build inputs can be recovered from the local runtime without executing its JS.
+ZIP integrity, recovery of those inputs and a production rebuild from the
+extracted source archive all pass. The Python TAR preparation path also passes
+on a 12-frame sensor (2.03 s).
+
+### Automated coverage and resource conditions
+
+`npm test` passes **13 files** serially; `npm run test:python` passes **11 tests**;
+`npm run build` passes. Existing baseline, mask, boundary suppression, startup,
+cancellation and delayed-render regressions remain intact. Added tests cover
+track validation, checksum identity, timestamp ordering, invalid samples, no
+future sample selection, cache eviction/model/sensor separation, cancellation,
+first-frame stability, input immutability, signed rounded differences and the
+segmentation threshold. A realistic contact fixture covers increasing change,
+sustained deformation and release; these are image/reference comparisons, not
+verified physical-force labels.
+
+The host has 15,092 MiB RAM and 8,192 MiB swap. Recorded browser endpoints had
+3,918–5,383 MiB available RAM and roughly 5.6–5.9 GiB swap occupied. Memory-stall
+pressure was observed and retained in each JSON report; no other application was
+stopped to improve timings. Full force preparation is explicitly outside the
+three-second joint-start budget. A full 2,432-frame **browser** preparation was
+not timed; complete browser calculation was tested on the 48-frame realistic
+fixture and the 12-frame short fixture. Mobile devices, other GPUs and measured
+force accuracy remain untested. Earlier failed/stalled performance runs below
+are preserved; the old camera-only startup numbers describe superseded behavior.
+
 ## Portable 1.2.1: exclude the optical rim (final revision)
 
 The user identified bright arc-shaped responses dominating the useful tactile

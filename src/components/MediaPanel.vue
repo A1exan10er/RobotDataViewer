@@ -11,15 +11,18 @@ import { tactileCache, calibrationKey } from '../tactileCache';
 import { collectNativeBaseline } from '../tactileCalibration';
 import { playbackMark } from '../playbackMetrics';
 import { RenderOrder } from '../renderOrder';
+import ForceReadout from './ForceReadout.vue';
+import type { ForceTrack } from '../forceTracks';
 import { TactileRenderer, type TactileImage } from '../tactile';
 import { NativeTransport, SoftwareTransport, regionProbe, sequentialTactile, closeFrame, type Transport, type DecodedFrame } from '../transport';
 
-const props = defineProps<{ media: Media; url?: string; blob?: Blob; timing: Timing; playback: Playback; episode?:Episode; recovery?:TactileRecovery }>();
+const props = defineProps<{ media: Media; url?: string; blob?: Blob; timing: Timing; playback: Playback; episode?:Episode; recovery?:TactileRecovery; forceEnabled?:boolean; forceTrack?:ForceTrack; forceFailed?:boolean }>();
 defineEmits<{ expand: [] }>();
 const video=ref<HTMLVideoElement|null>(null),canvas=ref<HTMLCanvasElement|null>(null),surface=ref<HTMLCanvasElement|null>(null);
 const query=new URLSearchParams(location.search);
 const software=ref(query.has('software')||(props.media.kind==='tactile'&&sequentialTactile(props.media.codec||'')&&!query.has('nativeTactile'))),opening=ref(true),aspect=ref('16 / 9'),state=ref<ChannelState>('preparing');
 const readyGeneration=ref(-1),regionRecovering=ref(false),regionDonor=ref(''),regionMethod=ref('');
+const paintedTime=ref(NaN),paintedGeneration=ref(-1);
 const failed=ref(!props.url||props.media.failed),referenceError=ref(false),ready=ref(false),gain=ref(10),cleanup=ref(true),regionMissing=ref(false);
 let transport:Transport|null=null,currentFrame:DecodedFrame|null=null,reference:TactileBaseline|null=null;
 let touchRenderer:TactileRenderer|null=null;
@@ -36,6 +39,7 @@ const showAll=computed({get:()=>!cleanup.value,set:(value:boolean)=>{cleanup.val
 const outside=computed(()=>{const ep=props.timing.episode,media=props.timing.media;return props.playback.time.value<ep[0]||props.playback.time.value>=ep.at(-1)!+(props.media.duration-media.at(-1)!)*1000;});
 const mark=(event:string,detail?:unknown)=>playbackMark(event,props.media.id,detail);
 function painted(sourceTime=video.value?.currentTime??0,generation=props.playback.generation.value,staged=false){
+  paintedTime.value=sourceTime;paintedGeneration.value=generation;
   renderOrder.didPaint();if(staged)channel.acknowledge(generation,sourceTime);
   if(canvas.value){canvas.value.dataset.presentedTime=String(sourceTime);canvas.value.dataset.generation=String(generation);}
   mark('tactile-paint',{generation,sourceTime,settingsRevision,staged,gain:gain.value,cleanup:cleanup.value});
@@ -244,5 +248,6 @@ onBeforeUnmount(()=>{
       <span class="response-legend" :title="t('responseLegend')"><span>{{ t('weak') }}</span><i aria-hidden="true"></i><span>{{ t('strong') }}</span></span>
       <details class="gain-popover"><summary :title="t('tactileSettings')"><SlidersHorizontal :size="14" /><span>{{ gain }}×</span></summary><div><label class="cleanup-setting"><span>{{ t('showAll') }}</span><input type="checkbox" v-model="showAll" :aria-label="t('showAll')" /></label><p class="cleanup-hint">{{ t('cleanupHint') }}</p><label>{{ t('gain') }} <b>{{ gain }}×</b><input type="range" min="1" max="16" step="1" v-model.number="gain" :aria-label="t('gain')" /></label><p class="cleanup-hint">{{ t('reference') }}</p></div></details>
     </footer>
+    <ForceReadout v-if="tactile && forceEnabled" :track="forceTrack" :time="paintedTime" :failed="forceFailed" :available="!outside && state==='ready' && playback.revealed.value && paintedGeneration===playback.generation.value" />
   </article>
 </template>

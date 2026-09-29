@@ -1,0 +1,32 @@
+{
+  "model": "PSP_deep_flow_diff_shear_valloss_0.6344",
+  "pipeline": "deepflow-035-clahe-relative-diff-2dp-first-frame-v1",
+  "weightsSha256": "31f6c525049e21cab4dae4e167e5327d771f7090377b7ca8a80cb17fb8148399",
+  "onnxSha256": "f090da97ea5264e191584859e4e3bb8aff39ac284fb3e8b66635e3d3d8c91a35",
+  "input": [
+    1,
+    3,
+    360,
+    640
+  ],
+  "outputs": [
+    "shear",
+    "fz"
+  ],
+  "unit": "N",
+  "scales": [
+    2.6,
+    5.7
+  ],
+  "zero": {
+    "normalized": [
+      0.06603264808654785,
+      0.04748544096946716
+    ],
+    "contactScore": 0.7734594941139221
+  },
+  "contactThreshold": 0.1,
+  "referenceFrame": 0,
+  "opencv": "4.12.0",
+  "onnxruntime": "1.23.2"
+}

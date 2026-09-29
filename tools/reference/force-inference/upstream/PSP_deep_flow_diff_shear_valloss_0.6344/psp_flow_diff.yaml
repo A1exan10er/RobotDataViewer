@@ -1,0 +1,82 @@
+data:
+  input_dirs:
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N6/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N9/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N10/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N11/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N12/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N21/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N22/deep_flow_Optical_Flow
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N23/deep_flow_Optical_Flow
+  # 与 input_dirs 一一对应的 Image_Diff 目录；训练时与光流 concat 为 [u, v, diff]
+  diff_dirs:
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N6/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N9/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N10/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N11/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N12/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N21/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N22/Image_Diff
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N23/Image_Diff
+  label_dirs:
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N6/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N9/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N10/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N11/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N12/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N21/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N22/Force_Map
+  - /home/xinzhi/桌面/dataset/Dataset0610_360/N23/Force_Map
+  # 每个 input_dirs/label_dirs 文件夹内独立按 train/val/test 比例划分（默认 true）
+  split_per_folder: true
+  mask_threshold: 1e-06
+  # 合力归一化上限（mask 内 sum，全数据集 15109 样本统计，2026-09-02）
+  # fx_abs max=2.4  fy_abs max=1.8  shear max=2.6  fz max=5.7
+  fx_max: 2.4
+  fy_max: 1.8
+  fz_max: 5.7
+  shear_max: 2.6
+  normalize: true
+  num_workers: 4
+  pair_cache_file: null
+  pin_memory: true
+  prefetch_factor: 2
+  verify_finite: false
+train:
+  batch_size: 24
+  epochs: 50
+  learning_rate: 1e-3
+  seed: 42
+  test_ratio: 0.2
+  train_ratio: 0.6
+  val_ratio: 0.2
+  weight_decay: 0.0001
+model:
+  # flow(2) + Image_Diff(1)
+  in_channels: 3
+  name: psp
+  num_classes: 2
+  pretrained_backbone: false
+output:
+  logs_dir: logs
+  models_dir: models
+  results_dir: results
+  save_name: PSP_deep_flow_diff_shear
+Loss:
+  dice_loss_weight: 2
+  segment_loss_weight: 2
+  mask_sum_regression: true
+  # 用 sqrt(fx^2+fy^2) 作为非负剪切合力，替代分别回归 fx/fy
+  use_shear_magnitude: true
+  # 分布力（像素级 MSE）— 当前模型不输出力场图，权重保持 0
+  fx_pixel_loss_weight: 0
+  fy_pixel_loss_weight: 0
+  fz_pixel_loss_weight: 0
+  # 合力（总力 L1，归一化空间）
+  fx_loss_weight: 2.0
+  fy_loss_weight: 2.0
+  shear_loss_weight: 2.0
+  fz_loss_weight: 1.0
+  # 物理合力在 0~2N 内（含零接触）的样本，shear/fz loss 额外乘数
+  low_force_max_n: 2.0
+  low_force_loss_multiplier: 1.5
