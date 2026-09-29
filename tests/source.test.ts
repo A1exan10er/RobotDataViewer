@@ -75,3 +75,10 @@ test('a malformed numeric channel does not hide the other recorded signals',asyn
  const source=await openRecording([file('episode/metadata.json','null'),file('episode/observation.state.eef_pose/data.csv','timestamp_ms,x\n"unfinished'),file('episode/observation.state.gripper/data.csv','timestamp_ms,gripper\n0,.02\n1000,.03')]);
  const data=await source.data(source.manifest.episodes[0].data);assert.equal(data.signals[0].values[1],.03);assert.ok(source.manifest.episodes[0].issues.some(i=>i.code==='invalid_samples'));
 });
+
+test('discovery retains identity and capture time without opening neighboring videos',async()=>{
+ const metadata={robot:'arx5',task_key:'plug',username:'operator',collector_device_id:'device',recording_session_id:'session',start_time:'2026-09-24T09:46:12Z'};
+ const source=await openRecording([file('group/episode/metadata.json',JSON.stringify(metadata)),file('group/episode/observation.image.right_wrist_left_tactile/video.mp4','not decoded during discovery')]);
+ assert.deepEqual(source.manifest.episodes[0].capture,{task:'plug',operator:'operator',device:'device',session:'session',time:Date.parse(metadata.start_time)});
+ assert.equal(source.manifest.episodes[0].media[0].width,0);source.dispose();
+});

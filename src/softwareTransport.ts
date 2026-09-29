@@ -1,3 +1,4 @@
+import type { RegionGeometry } from './tactileRoi';
 import type { TactileBaseline } from './tactileFilter';
 import { discardPastFrames } from './frameQueue.ts';
 export interface Transport {
@@ -21,14 +22,14 @@ export class DecoderTransport implements Transport {
   private bufferSize:number;private readonly fps:number;private reserveTarget=0;private playing=false;private seedBytes=0;
   private pts:number[];private draw:(frame:DecodedFrame)=>void;private failed:(error:unknown)=>void;
   private diagnostics:(metrics:Record<string,number>)=>void;private readonly isTactile:boolean;
-  constructor(worker:Worker,resources:Uint8Array|Promise<DecoderResources>,blob:Blob,pts:number[],fps:number,draw:(frame:DecodedFrame)=>void,failed:(error:unknown)=>void,isTactile=false,reference?:TactileBaseline,diagnostics=(metrics:Record<string,number>)=>{void metrics;}){
+  constructor(worker:Worker,resources:Uint8Array|Promise<DecoderResources>,blob:Blob,pts:number[],fps:number,draw:(frame:DecodedFrame)=>void,failed:(error:unknown)=>void,isTactile=false,reference?:TactileBaseline,diagnostics=(metrics:Record<string,number>)=>{void metrics;},probeOnly=false){
     this.isTactile=isTactile;this.pts=pts;this.draw=draw;this.failed=failed;this.diagnostics=diagnostics;
     this.fps=Math.max(1,fps);this.bufferSize=Math.max(8,Math.min(40,Math.ceil(this.fps*1.2)));
     this.worker=worker;
     this.worker.onmessage=e=>{const p=this.calls.get(e.data.id);if(!p){e.data.result?.frames?.forEach(closeFrame);return;}this.calls.delete(e.data.id);clearTimeout(p.timer);e.data.error?p.reject(new Error(e.data.error)):p.resolve(e.data.result);};
     this.worker.onerror=()=>{if(this.dead)return;this.error=true;const error=new Error('decoder');for(const p of this.calls.values()){clearTimeout(p.timer);p.reject(error);}this.calls.clear();this.failed(error);};
     const initialize=async({wasmBinary,wasmModule}:DecoderResources)=>{
-      const args={blob,frameRate:fps,frameCount:pts.length,isTactile,reference,pixelMode:typeof createImageBitmap!=='function'};
+      const args={blob,frameRate:fps,frameCount:pts.length,isTactile,reference,probeOnly,pixelMode:typeof createImageBitmap!=='function'};
       try{return await this.rpc('init',{...args,...(wasmModule?{wasmModule}:{wasmBinary})});}
       catch(error){if(wasmModule&&error instanceof Error&&error.name==='DataCloneError')return this.rpc('init',{...args,wasmBinary});throw error;}
     };
@@ -41,6 +42,15 @@ export class DecoderTransport implements Transport {
       this.resize();this.ready=true;this.present(0,1,false);
     });
     void this.initialized.catch(error=>{if(!this.dead&&!this.error){this.error=true;this.failed(error);}});
+  }
+  async probeRegion(blob:Blob,width:number,height:number):Promise<RegionGeometry|undefined>{
+    await this.initialized;const result=await this.rpc('probeRegion',{blob,width,height});this.metrics(result.metrics);return result.geometry;
+  }
+  async geometry(episodeId:string):Promise<RegionGeometry|undefined>{return (await this.rpc('geometry',{episodeId})).geometry;}
+  async adoptRegion(donor:RegionGeometry):Promise<TactileBaseline|undefined>{
+    if(this.ready||this.pending||this.queue.length)throw new Error('Region must be resolved before staging');
+    const model=(await this.rpc('adoptRegion',{donor})).reference;
+    if(model)this.reference=model;return model;
   }
   private metrics(metrics?:Record<string,number>){if(metrics){this.seedBytes=metrics.seedBytes||0;this.diagnostics(metrics);}}
   private resize(){

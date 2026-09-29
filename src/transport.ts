@@ -18,8 +18,16 @@ function resources(){
 /** Tactile decoding is sequential even when the browser can play the codec. */
 export function sequentialTactile(codec:string){return /^(avc[13]|hev1|hvc1)(\.|$)/i.test(codec);}
 export class SoftwareTransport extends DecoderTransport {
-  constructor(blob:Blob,pts:number[],fps:number,draw:(frame:DecodedFrame)=>void,failed:(error:unknown)=>void,isTactile=false,reference?:TactileBaseline,diagnostics?:(metrics:Record<string,number>)=>void){
+  constructor(blob:Blob,pts:number[],fps:number,draw:(frame:DecodedFrame)=>void,failed:(error:unknown)=>void,isTactile=false,reference?:TactileBaseline,diagnostics?:(metrics:Record<string,number>)=>void,probeOnly=false){
     const {workerUrl,compiled}=resources();
-    super(new Worker(workerUrl),compiled,blob,pts,fps,draw,failed,isTactile,reference,diagnostics);
+    super(new Worker(workerUrl),compiled,blob,pts,fps,draw,failed,isTactile,reference,diagnostics,probeOnly);
   }
+}
+
+/** Only constructed when native-path neighbor recovery actually needs a donor. */
+export function regionProbe(signal:AbortSignal){
+  signal.throwIfAborted();
+  const player=new SoftwareTransport(new Blob(),[],30,()=>{},()=>{},true,undefined,undefined,true);
+  const dispose=()=>player.dispose();signal.addEventListener('abort',dispose,{once:true});
+  return {probe:(blob:Blob,width:number,height:number)=>player.probeRegion(blob,width,height),dispose(){signal.removeEventListener('abort',dispose);dispose();}};
 }

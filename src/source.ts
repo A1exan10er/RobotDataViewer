@@ -1,6 +1,7 @@
 import type { Episode, EpisodeData, Manifest } from './types';
 import { openPackage, SamplePackage } from './package.ts';
 import { readTar, recordingPath } from './archive.ts';
+import { captureContext } from './tactileRecovery.ts';
 import { cameras, findChannel, loadRaw, readJson } from './raw.ts';
 import { safeRelativePath } from './math.ts';
 export interface RecordingSource {
@@ -45,7 +46,7 @@ async function discover(files:Map<string,Blob>,signal?:AbortSignal):Promise<Reco
     if(!media.length&&!findChannel(files,stateRoot,'observation.state.eef_pose')&&!findChannel(files,stateRoot,'observation.state.gripper'))continue;
     const stateMetadata=metadataByRoot.get(stateRoot)??{};
     const name=root.split('/').filter(Boolean).at(-1)||'episode';
-    episodes.push({id:root||name,title:String(metadata.task_title||metadata.task_name||stateMetadata.task_title||stateMetadata.task_name||name),robot:String(metadata.robot_type||metadata.robot||stateMetadata.robot_type||stateMetadata.robot||'robot'),durationMs:Number(metadata.duration_seconds)*1000||1,data:root,...(stateRoot!==root?{stateRoot}:{}),sourceName:root.replace(/\/$/,'')||name,media,issues:[]});
+    episodes.push({capture:captureContext(stateMetadata),id:root||name,title:String(metadata.task_title||metadata.task_name||stateMetadata.task_title||stateMetadata.task_name||name),robot:String(metadata.robot_type||metadata.robot||stateMetadata.robot_type||stateMetadata.robot||'robot'),durationMs:Number(metadata.duration_seconds)*1000||1,data:root,...(stateRoot!==root?{stateRoot}:{}),sourceName:root.replace(/\/$/,'')||name,media,issues:[]});
   }
   episodes.sort((a,b)=>a.sourceName.localeCompare(b.sourceName));
   if(!episodes.length)throw new Error('missingRecording');
@@ -58,6 +59,13 @@ export async function openRecording(files:File[], archive=false,signal?:AbortSig
   if(files.some(f=>f.name==='manifest.json')){
     try{
       const pkg:SamplePackage=await openPackage(files);
+      for(const ep of pkg.manifest.episodes){
+        ep.capture=undefined;
+        const tactile=ep.media.find(m=>m.kind==='tactile'),path=tactile?.original;
+        const marker=path?.indexOf('observation.image');
+        const metadata=path&&marker!==undefined&&marker>=0?pkg.file(path.slice(0,marker)+'metadata.json'):undefined;
+        if(metadata){try{ep.capture=captureContext(await readJson(metadata));}catch{}}
+      }
       return {kind:'prepared',manifest:pkg.manifest,file:p=>pkg.file(p),data:p=>pkg.data(p),dispose:()=>{}};
     }catch{/* This may be an original recording with an unrelated manifest. */}
   }

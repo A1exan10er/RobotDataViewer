@@ -49,7 +49,7 @@ Each channel prepares a fixed baseline from the first `min(totalFrames, max(8, r
 
 For each current frame, the renderer subtracts the stored noise floor and an additional 2 intensity levels from absolute grayscale difference, clamps at zero, and applies a separable 17-tap Gaussian with sigma 2 and reflected (`REFLECT_101`) boundaries. The result is multiplied by display gain, clamped/truncated to 8-bit, and mapped through a gamma-0.7 lookup table. Intensities below 10 are suppressed. A bundled 256-entry Inferno table supplies RGB colors; zero response is exactly opaque black. Floating-point accumulation can differ slightly from OpenCV SIMD processing at quantization boundaries.
 
-The sensing region is detected from the median baseline using the locally bundled FlawDetection arc algorithm. A centre-aligned bilinear 640×360 analysis image feeds edge scoring, an anchored right-opening curve fit, guided refinement, and dominant-foreground selection. Candidate points must lead into surface pixels 14–30 analysis pixels to their right (median grayscale >0.075). Accepted curves have confidence ≥0.75, finite coordinates, and both endpoints at least 25 pixels right of the leftmost point. The mask keeps foreground right of the curve with a 14-pixel inward margin and three erosion iterations, then maps back to source pixel centres using nearest-neighbor sampling. The source frame is not cropped, rotated or resized for display.
+The sensing region is detected from the median baseline using the locally bundled FlawDetection arc algorithm. A centre-aligned bilinear 640×360 analysis image feeds edge scoring, an anchored right-opening curve fit, guided refinement, and dominant-foreground selection. Candidate points must lead into surface pixels 14–30 analysis pixels to their right (median grayscale >0.075). Accepted curves have confidence ≥0.75, finite coordinates, and both endpoints at least 25 pixels right of the leftmost point. The detected curve follows the outer optical rim. The display mask excludes a 56-analysis-pixel Euclidean band around that curve, including its sloping ends, followed by three erosion iterations. It keeps the remaining foreground inside the sensing surface and maps back to source pixel centres using nearest-neighbor sampling. This excludes bright rim changes before smoothing and after coloring; interior gain and response values are unchanged. The source frame is not cropped, rotated or resized for display.
 
 Excluded differences are zeroed before smoothing and output pixels are forced to opaque black after coloring, so outside changes cannot bleed into the sensing region. The mask is always enforced, including with Show all changes. Missing or unreliable arcs produce an empty mask and a visible panel notice; there is no unmasked fallback and other channels can continue playback.
 
@@ -86,3 +86,20 @@ prefetch farther. Retained opening samples and colored frame buffers share the
 startup uses one sequential rewind. The 32 MiB LRU contains only completed models,
 never videos, decoded samples or bitmaps. Bounded local diagnostics report decoder
 initialization, samples, seeks, statistics, arc detection and joint presentation.
+
+### Checked sensor-region recovery (1.2.1)
+
+Original discovery retains optional capture context from metadata: task, operator,
+collector device, recording session and start time. Companion exports use their
+UMI metadata. Prepared packages remain version 1 and can recover this context from
+included original metadata; missing context disables neighbor matching, not local
+detection. No recording files are changed.
+
+Calibration models now carry an optional canonical arc curve, detection method
+(local/broader/neighbor) and donor episode ID. Internal worker operations probe a
+donor's first eight grayscale frames, validate its rim, and install the resolved
+mask before frame staging. The native path uses a disposable probe worker only
+when a donor is needed. Probe contexts do not change the selected video cursor.
+Compact geometry/rim descriptors share the existing 32 MiB model-cache budget.
+Explicitly different device IDs never match. Missing device IDs require matching
+recording sessions as well as task/operator/robot/channel and image alignment.

@@ -1451,3 +1451,5 @@ small {
 
 /* First frames are staged underneath an opaque overlay until joint readiness. */
 .media-message.joint-preparation { background: #090c10; }
+
+.region-recovered { padding: 5px 10px; color: #91bdb6; font-size: 10px; line-height: 1.4; }

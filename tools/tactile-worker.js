@@ -1,6 +1,6 @@
 // Canvas capture is optional: compatibility browsers send one RGBA frame per task.
 // All statistics, arc fitting and pixel processing remain off the playback thread.
-let canvas, context, filter, calibration, output;
+let canvas, context, filter, calibration, output, referenceModel;
 function configure(width,height){
   if(!canvas){canvas=new OffscreenCanvas(width,height);context=canvas.getContext('2d',{willReadFrequently:true});}
   if(width!==canvas.width||height!==canvas.height)throw new Error('Frame dimensions differ');
@@ -8,16 +8,24 @@ function configure(width,height){
 self.onmessage=({data})=>{
   const {id,bitmap,kind,gain=10,cleanup=true,reference}=data;
   try{
+    if(kind==='geometry'){self.postMessage({id,geometry:baselineGeometry(referenceModel,data.episodeId)});return;}
+    if(kind==='adoptRegion'){
+      const model=adoptBaselineRegion(referenceModel,data.donor);
+      if(model){referenceModel=model;filter=new TactileFilter(model);}
+      self.postMessage({id,reference:model?copyTactileBaseline(model):undefined});return;
+    }
     if(kind==='reference'){
+      referenceModel=reference;
       if(!data.pixelMode)configure(reference.width,reference.height);
       filter=new TactileFilter(reference);output={width:reference.width,height:reference.height,data:new Uint8ClampedArray(reference.width*reference.height*4)};
       self.postMessage({id});return;
     }
     if(kind==='calibrated'){
       if(!calibration)throw new Error('No baseline frames');
-      const model=calibration.finish();calibration=null;
+      const model=calibration.finish();calibration=null;referenceModel=model;
       filter=new TactileFilter(model);output={width:model.width,height:model.height,data:new Uint8ClampedArray(model.width*model.height*4)};
-      self.postMessage({id,reference:model},[model.baseline.buffer,model.noiseFloor.buffer,model.roiMask.buffer]);return;
+      const copy=copyTactileBaseline(model);
+      self.postMessage({id,reference:copy},[copy.baseline.buffer,copy.noiseFloor.buffer,copy.roiMask.buffer,...(copy.roiCurve?[copy.roiCurve.buffer]:[])]);return;
     }
     let pixels;
     if(data.pixels)pixels={width:data.width,height:data.height,data:new Uint8ClampedArray(data.pixels)};

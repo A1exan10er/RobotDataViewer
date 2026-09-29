@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Maximize2, AlertCircle, SlidersHorizontal } from 'lucide-vue-next';
-import type { Media, Timing } from '../types';
+import type { TactileRecovery } from '../tactileRecovery';
+import type { Media, Timing, Episode } from '../types';
 import type { Playback } from '../playback';
 import type { ChannelState } from '../synchronizedChannel';
 import { channelName, t } from '../i18n';
@@ -11,14 +12,14 @@ import { collectNativeBaseline } from '../tactileCalibration';
 import { playbackMark } from '../playbackMetrics';
 import { RenderOrder } from '../renderOrder';
 import { TactileRenderer, type TactileImage } from '../tactile';
-import { NativeTransport, SoftwareTransport, sequentialTactile, closeFrame, type Transport, type DecodedFrame } from '../transport';
+import { NativeTransport, SoftwareTransport, regionProbe, sequentialTactile, closeFrame, type Transport, type DecodedFrame } from '../transport';
 
-const props = defineProps<{ media: Media; url?: string; blob?: Blob; timing: Timing; playback: Playback }>();
+const props = defineProps<{ media: Media; url?: string; blob?: Blob; timing: Timing; playback: Playback; episode?:Episode; recovery?:TactileRecovery }>();
 defineEmits<{ expand: [] }>();
 const video=ref<HTMLVideoElement|null>(null),canvas=ref<HTMLCanvasElement|null>(null),surface=ref<HTMLCanvasElement|null>(null);
 const query=new URLSearchParams(location.search);
 const software=ref(query.has('software')||(props.media.kind==='tactile'&&sequentialTactile(props.media.codec||'')&&!query.has('nativeTactile'))),opening=ref(true),aspect=ref('16 / 9'),state=ref<ChannelState>('preparing');
-const readyGeneration=ref(-1);
+const readyGeneration=ref(-1),regionRecovering=ref(false),regionDonor=ref(''),regionMethod=ref('');
 const failed=ref(!props.url||props.media.failed),referenceError=ref(false),ready=ref(false),gain=ref(10),cleanup=ref(true),regionMissing=ref(false);
 let transport:Transport|null=null,currentFrame:DecodedFrame|null=null,reference:TactileBaseline|null=null;
 let touchRenderer:TactileRenderer|null=null;
@@ -85,9 +86,21 @@ function callback(now:number){
   if(!software.value&&state.value==='ready'&&video.value&&video.value.currentTime!==lastTime&&now-lastDraw>=1000/Math.min(30,props.media.fps||30)-2){draw();lastDraw=now;lastTime=video.value.currentTime;}
   animationFrame=requestAnimationFrame(callback);
 }
+async function resolveRegion(model:TactileBaseline,signal:AbortSignal,renderer:TactileRenderer|SoftwareTransport){
+  if(!props.recovery||!props.episode)return model;
+  let probe:ReturnType<typeof regionProbe>|undefined;
+  const started=performance.now();
+  try{
+    const result=await props.recovery.resolve(props.episode,props.media.id,model,{
+      geometry:id=>renderer.geometry(id),adopt:donor=>renderer.adoptRegion(donor),
+      probe:(blob,width,height)=>renderer instanceof SoftwareTransport?renderer.probeRegion(blob,width,height):(probe??=regionProbe(signal)).probe(blob,width,height),
+    },signal,donor=>{regionRecovering.value=true;mark('region-neighbor-probe',{donor});});
+    signal.throwIfAborted();mark('region-resolved',{method:result.roiMethod,donor:result.roiDonor,recoveryMs:performance.now()-started});return result;
+  }finally{probe?.dispose();regionRecovering.value=false;}
+}
 async function useModel(model:TactileBaseline,signal:AbortSignal){
   signal.throwIfAborted();
-  reference=model;regionMissing.value=model.roiStatus==='not-found';aspect.value=`${model.width} / ${model.height}`;
+  reference=model;regionDonor.value=model.roiDonor||'';regionMethod.value=model.roiMethod||'';regionMissing.value=model.roiStatus==='not-found';aspect.value=`${model.width} / ${model.height}`;
   await nextTick();if(disposed||signal.aborted)return;
   if(canvas.value){canvas.value.width=model.width;canvas.value.height=model.height;const context=canvas.value.getContext('2d')!;context.fillStyle='#000';context.fillRect(0,0,model.width,model.height);}
   if(regionMissing.value){ready.value=true;props.playback.preparationFailed(channel);}
@@ -114,8 +127,10 @@ async function loaded(){
         else{
           await collectNativeBaseline(props.url!,props.timing.media,props.media.duration,props.media.fps,async source=>{await renderer.sample(source);},abort.signal);
           model=await renderer.calibrated();abort.signal.throwIfAborted();
-          if(props.blob)tactileCache.put(props.blob,key,model);
+
         }
+        model=await resolveRegion(model,abort.signal,renderer);
+        if(props.blob&&!cached)tactileCache.put(props.blob,key,model);
         abort.signal.throwIfAborted();mark('calibration-complete',{cached:!!cached});await useModel(model,abort.signal);
       }finally{clearTimeout(timer);}
     },abort.signal);
@@ -180,7 +195,7 @@ function fallback(initial=false){
     props.playback.register(channel,player);
     await player.initialized;abort.signal.throwIfAborted();
     if(!tactile)props.playback.prepared(channel);
-    if(tactile){const model=player.reference!;if(!cached)tactileCache.put(props.blob!,key,model);mark('calibration-complete',{cached:!!cached});await useModel(model,abort.signal);if(!regionMissing.value&&!abort.signal.aborted)props.playback.prepared(channel);}
+    if(tactile){const model=await resolveRegion(player.reference!,abort.signal,player);if(!cached)tactileCache.put(props.blob!,key,model);mark('calibration-complete',{cached:!!cached});await useModel(model,abort.signal);if(!regionMissing.value&&!abort.signal.aborted)props.playback.prepared(channel);}
   };
   if(tactile)mark('calibration-queued');
   void (tactile?props.playback.prepareTactile(start,abort.signal):start()).catch(error=>{if(!disposed&&!abort.signal.aborted)decoderFailed(error);});
@@ -207,7 +222,7 @@ onBeforeUnmount(()=>{
 </script>
 
 <template>
-  <article class="media-card" :class="{ 'tactile-card': media.kind === 'tactile', inactive: outside }" :data-channel="media.id" :data-preparation="state" :data-generation="playback.generation.value" :data-ready-generation="readyGeneration" :data-revealed="playback.revealed.value" :data-mode="software ? 'software' : 'native'">
+  <article class="media-card" :class="{ 'tactile-card': media.kind === 'tactile', inactive: outside }" :data-channel="media.id" :data-preparation="state" :data-generation="playback.generation.value" :data-ready-generation="readyGeneration" :data-revealed="playback.revealed.value" :data-region-method="regionMethod" :data-region-donor="regionDonor" :data-mode="software ? 'software' : 'native'">
     <header class="panel-heading"><span><i class="channel-dot" :class="media.id.startsWith('r_') ? 'right' : media.id.startsWith('l_') ? 'left' : ''"></i>{{ channelName(media.id) }}</span><button class="icon-button" :title="t('expand')" :aria-label="t('expand') + ': ' + channelName(media.id)" @click="$emit('expand')"><Maximize2 :size="15" /></button></header>
     <div class="media-images" :style="media.kind === 'tactile' ? { '--response-aspect': aspect } : undefined">
       <div class="image-cell" :class="{ 'tactile-source': media.kind === 'tactile' }" :aria-hidden="media.kind === 'tactile' ? true : undefined">
@@ -219,11 +234,12 @@ onBeforeUnmount(()=>{
       <div v-if="media.kind === 'tactile'" class="image-cell difference-cell">
         <canvas ref="canvas" :aria-label="t('difference')"></canvas>
         <div v-if="failed" class="media-message"><AlertCircle :size="20" /><span>{{ t(url ? 'failed' : 'missingMedia') }}</span></div>
-        <div v-else-if="referenceError || (!regionMissing && (!ready || !playback.revealed.value))" class="media-message joint-preparation"><span>{{ t(referenceError ? 'referenceFailed' : state === 'preparing' ? 'referenceLoading' : state === 'ready' ? 'waitingTogether' : 'referenceJoining') }}</span></div>
+        <div v-else-if="referenceError || (!regionMissing && (!ready || !playback.revealed.value))" class="media-message joint-preparation"><span>{{ t(referenceError ? 'referenceFailed' : regionRecovering ? 'regionRecovering' : state === 'preparing' ? 'referenceLoading' : state === 'ready' ? 'waitingTogether' : 'referenceJoining') }}</span></div>
         <div v-else-if="regionMissing" class="media-message region-missing" role="status"><span>{{ t('regionMissing') }}</span></div>
       </div>
       <span v-if="outside && !failed" class="interval-label">{{ t('outside') }}</span>
     </div>
+    <div v-if="regionDonor" class="region-recovered" :title="regionDonor">{{ t('regionRecovered') }}</div>
     <footer v-if="media.kind === 'tactile'" class="tactile-footer">
       <span class="response-legend" :title="t('responseLegend')"><span>{{ t('weak') }}</span><i aria-hidden="true"></i><span>{{ t('strong') }}</span></span>
       <details class="gain-popover"><summary :title="t('tactileSettings')"><SlidersHorizontal :size="14" /><span>{{ gain }}×</span></summary><div><label class="cleanup-setting"><span>{{ t('showAll') }}</span><input type="checkbox" v-model="showAll" :aria-label="t('showAll')" /></label><p class="cleanup-hint">{{ t('cleanupHint') }}</p><label>{{ t('gain') }} <b>{{ gain }}×</b><input type="range" min="1" max="16" step="1" v-model.number="gain" :aria-label="t('gain')" /></label><p class="cleanup-hint">{{ t('reference') }}</p></div></details>

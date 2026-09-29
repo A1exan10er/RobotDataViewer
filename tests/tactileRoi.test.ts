@@ -14,7 +14,7 @@ for (const f of fixture.cases) test(`arc oracle: ${f.name}`, () => {
   const gray=decode(f.baseline), original=gray.slice(), start=performance.now();
   const actual=detectTactileRegion(gray,f.width,f.height), mask=decode(f.mask), bytes=decode(f.curve);
   const curve=new Float32Array(bytes.buffer,bytes.byteOffset,bytes.length/4);
-  assert.equal(actual.status,f.status);assert.deepEqual(gray,original);
+  assert.equal(actual.status,f.status);if(f.method)assert.equal(actual.method,f.method);assert.deepEqual(gray,original);
   assert.ok(Math.abs(actual.confidence-f.confidence)<.01,`${actual.confidence} vs ${f.confidence}`);
   assert.equal(actual.curve.length,curve.length);
   for(let y=0;y<curve.length;y++)assert.ok(Math.abs(actual.curve[y]-curve[y])<=1,`row ${y}: ${actual.curve[y]} vs ${curve[y]}`);

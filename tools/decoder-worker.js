@@ -2,7 +2,7 @@
 // One sequential decoder per channel. Opening grayscale samples also seed playback.
 let av,fmt,stream,ctx,pkt,frame,scale,scaled,eof=false,base=null,tactile=false,reference=null,touchFilter=null;
 let seed=[],seedBytes=0,delta,useBitmaps=true;
-const metrics={decodedFrames:0,baselineSamples:0,rewinds:0,decodeMs:0,statisticsMs:0,regionMs:0,initMs:0};
+const metrics={decodedFrames:0,baselineSamples:0,rewinds:0,decodeMs:0,statisticsMs:0,regionMs:0,initMs:0,regionProbes:0,regionProbeFrames:0};
 const snapshot=()=>({...metrics,seedFrames:seed.length,seedBytes});
 async function rewind(time){
   const ticks=Math.round((time+base)*stream.time_base_den/stream.time_base_num);
@@ -35,13 +35,14 @@ async function readPixels(time){
     return output;
   }finally{for(const f of frames)await av.av_frame_free_js(f);metrics.decodeMs+=performance.now()-started;}
 }
-async function initialize({blob,wasmBinary,wasmModule,isTactile,frameRate,frameCount,reference:cached,pixelMode=false}){
+async function initialize({blob,wasmBinary,wasmModule,isTactile,frameRate,frameCount,reference:cached,pixelMode=false,probeOnly=false}){
   const started=performance.now();tactile=!!isTactile;useBitmaps=!pixelMode&&typeof createImageBitmap==='function';
   let rejectInstantiation;
   const instantiationFailed=new Promise((_,reject)=>{rejectInstantiation=reject;});
   av=await Promise.race([instantiationFailed,LibAV.LibAV({noworker:true,factory:options=>LibAVFactory({...options,...(wasmModule?{
     instantiateWasm(imports,ready){WebAssembly.instantiate(wasmModule,imports).then(instance=>ready(instance,wasmModule)).catch(rejectInstantiation);return {};}
   }:{wasmBinary})})})]);
+  if(probeOnly)return {};
   await av.mkreadaheadfile('recording.mp4',blob);
   let streams;[fmt,streams]=await av.ff_init_demuxer_file('recording.mp4');
   stream=streams.find(s=>s.codec_type===av.AVMEDIA_TYPE_VIDEO);
@@ -69,7 +70,47 @@ async function initialize({blob,wasmBinary,wasmModule,isTactile,frameRate,frameC
   }
   if(tactile){touchFilter=new TactileFilter(reference);delta=new Uint8ClampedArray(reference.width*reference.height*4);}
   metrics.initMs=performance.now()-started;
-  return {reference:reference?{...reference,baseline:reference.baseline.slice(),noiseFloor:reference.noiseFloor.slice(),roiMask:reference.roiMask.slice()}:undefined,metrics:snapshot()};
+  return {reference:reference?copyTactileBaseline(reference):undefined,metrics:snapshot()};
+}
+// A separate demuxer/decoder context in the same WASM instance leaves the selected
+// video's cursor, retained opening samples and EOF state completely untouched.
+async function probeRegion({blob,width,height}){
+  const name='region-probe.mp4',samples=[];let df,dc,dp,dr,ds,sc;const started=performance.now();
+  metrics.regionProbes++;
+  try{
+    await av.mkreadaheadfile(name,blob);
+    const [format,streams]=await av.ff_init_demuxer_file(name);df=format;
+    const stream=streams.find(s=>s.codec_type===av.AVMEDIA_TYPE_VIDEO);if(!stream)return {};
+    [,dc,dp,dr]=await av.ff_init_decoder(stream.codec_id,{codecpar:stream.codecpar,time_base:[stream.time_base_num,stream.time_base_den]});
+    ds=await av.av_frame_alloc();
+    for(let packet=0;packet<4096&&samples.length<8;packet++){
+      if(performance.now()-started>3000)throw new Error('Region probe timed out');
+      const [result,packets]=await av.ff_read_frame_multi(df,dp,{limit:1}),end=result===av.AVERROR_EOF;
+      if(result<0&&!end&&result!==-av.EAGAIN)throw new Error('Could not read donor');
+      const frames=await av.ff_decode_multi(dc,dp,dr,packets[stream.index]||[],{fin:end,copyoutFrame:'ptr'});
+      try{
+        for(const frame of frames){
+          if(samples.length===8)break;
+          const [w,h,format]=await Promise.all([av.AVFrame_width(frame),av.AVFrame_height(frame),av.AVFrame_format(frame)]);
+          if(w!==width||h!==height)return {};
+          sc??=await av.sws_getContext(w,h,format,w,h,av.AV_PIX_FMT_RGBA,2,0,0,0);
+          await av.sws_scale_frame(sc,ds,frame);const pixels=await av.ff_copyout_frame_video_imagedata(ds);
+          samples.push(tactileGray(pixels.data));metrics.regionProbeFrames++;
+        }
+      }finally{for(const frame of frames)await av.av_frame_free_js(frame);}
+      if(end)break;
+    }
+    return {geometry:detectRegionSamples(samples,width,height),metrics:snapshot()};
+  }finally{
+    // Attempt every release even if an earlier cleanup operation fails.
+    for(const release of [()=>sc&&av.sws_freeContext(sc),()=>ds&&av.av_frame_free_js(ds),()=>dc&&av.ff_free_decoder(dc,dp,dr),()=>df&&av.avformat_close_input_js(df),()=>av.unlink(name)])try{await release();}catch{}
+  }
+}
+function geometry({episodeId}){return {geometry:baselineGeometry(reference,episodeId)};}
+function adoptRegion({donor}){
+  const resolved=adoptBaselineRegion(reference,donor);if(!resolved)return {};
+  reference=resolved;touchFilter=new TactileFilter(reference);
+  return {reference:copyTactileBaseline(reference)};
 }
 async function difference(gray,gain,cleanup){
   touchFilter.renderGray(gray,delta,gain,cleanup);
@@ -118,11 +159,12 @@ self.onmessage=event=>{
   chain=chain.then(async()=>{
     if(method==='batch'&&id<newestSeek){self.postMessage({id,result:{frames:[],eof:false}});return;}
     try{
-      const result=method==='init'?await initialize(args):method==='redraw'?await redraw(args):await batch(args);
+      const methods={init:initialize,redraw,batch,probeRegion,geometry,adoptRegion};
+      const result=await methods[method](args);
       const model=result.reference;
       self.postMessage({id,result},[...new Set([
         ...(result.frames?.flatMap(f=>[f.image,f.pixels,f.gray,f.differenceImage,f.difference].filter(Boolean))||[]),
-        ...[model?.baseline.buffer,model?.noiseFloor.buffer,model?.roiMask.buffer].filter(Boolean)
+        ...[model?.baseline.buffer,model?.noiseFloor.buffer,model?.roiMask.buffer,model?.roiCurve?.buffer,result.geometry?.curve.buffer,result.geometry?.rim.buffer].filter(Boolean)
       ])]);
     }catch(error){self.postMessage({id,error:String(error?.message||error)});}
   });

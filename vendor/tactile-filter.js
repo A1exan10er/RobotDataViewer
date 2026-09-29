@@ -1,4 +1,10 @@
 const ROI_WIDTH = 640, ROI_HEIGHT = 360, ROI_SIZE = ROI_WIDTH * ROI_HEIGHT;
+// The detected curve follows the outer rim, not the useful sensing surface.
+// A Euclidean guard also excludes its sloping upper/lower sections. Measured at
+// 640x360, 56 px clears the broad rim in the local recordings; the existing 3 px
+// erosion below adds protection against interpolation and small rim movement.
+const TACTILE_RIM_INSET = 56;
+const rimOffsets = Float64Array.from({ length: 2 * TACTILE_RIM_INSET + 1 }, (_, i) => Math.sqrt(TACTILE_RIM_INSET ** 2 - (i - TACTILE_RIM_INSET) ** 2));
 const f32 = Math.fround;
 // Centre-aligned bilinear sampling, with replicated edge pixels (also used by the oracle).
 function analysisGray(source, width, height) {
@@ -107,7 +113,7 @@ function peaks(gray, foreground) {
     }
     return rows;
 }
-function fitArc(rows) {
+function fitArc(rows, broader = false) {
     const votes = [];
     for (let y = 0; y < ROI_HEIGHT; y++)
         for (const { x, value } of rows[y])
@@ -122,14 +128,17 @@ function fitArc(rows) {
         weightedY += f32(w * v.y);
     }
     const meetingX = weight ? f32(weightedX / weight) : ROI_WIDTH * .08, meetingY = weight ? f32(weightedY / weight) : 180;
-    let bestScore = -1, bestY = 0, bestPoints = [];
-    const yStart = Math.max(95, meetingY - 55), yEnd = Math.min(255, meetingY + 55);
-    const xStart = Math.max(18, meetingX - 32), xEnd = Math.min(ROI_WIDTH * .20, meetingX + 32);
+    let bestScore = -1, bestY = 0;
+    // Reuse row selections: a broad search visits thousands of candidate curves.
+    // Allocating one point object per supported row per candidate causes GC stalls.
+    const selectedRows = new Int16Array(ROI_HEIGHT), bestRows = new Int16Array(ROI_HEIGHT).fill(-1);
+    const yStart = broader ? 95 : Math.max(95, meetingY - 55), yEnd = broader ? 255 : Math.min(255, meetingY + 55);
+    const xStart = broader ? 18 : Math.max(18, meetingX - 32), xEnd = broader ? ROI_WIDTH * .20 : Math.min(ROI_WIDTH * .20, meetingX + 32);
     for (let y0 = yStart; y0 < yEnd; y0 += 8)
         for (let x0 = xStart; x0 < xEnd; x0 += 4)
             for (let k = 0; k < 22; k++) {
-                const curvature = .0014 + k * (.0065 - .0014) / 21, points = [];
-                let total = 0;
+                const curvature = .0014 + k * (.0065 - .0014) / 21;
+                let total = 0, count = 0;
                 for (let y = 0; y < ROI_HEIGHT; y++) {
                     const predicted = x0 + curvature * (y - y0) ** 2;
                     let value = 0, selected = -1;
@@ -143,18 +152,20 @@ function fitArc(rows) {
                             selected = peak.x;
                         }
                     }
+                    selectedRows[y] = selected;
                     if (selected >= 0) {
                         total += value;
-                        points.push({ x: selected, y });
+                        count++;
                     }
                 }
-                const score = total * (.5 + Math.min(points.length / 220, 1)) - Math.abs(x0 - meetingX) * .10 - Math.abs(y0 - meetingY) * .025;
+                const score = total * (.5 + Math.min(count / 220, 1)) - Math.abs(x0 - meetingX) * .10 - Math.abs(y0 - meetingY) * .025;
                 if (score > bestScore) {
                     bestScore = score;
                     bestY = y0;
-                    bestPoints = points;
+                    bestRows.set(selectedRows);
                 }
             }
+    const bestPoints = Array.from(bestRows, (x, y) => ({ x, y })).filter(p => p.x >= 0);
     if (bestPoints.length < ROI_HEIGHT * .20)
         return { curve: new Float32Array(), confidence: 0 };
     // Two-column least squares: x = intercept + curvature * (y - vertexY)^2.
@@ -225,28 +236,125 @@ function fitArc(rows) {
     const error = selected.length ? selected.reduce((sum, p) => sum + Math.abs(p.x - curve[p.y]), 0) / selected.length : 30;
     return { curve, confidence: Math.max(0, Math.min(1, selected.length / ROI_HEIGHT * (1 - Math.min(error / 30, .85)))) };
 }
-function detectTactileRegion(baseline, width, height) {
-    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || baseline.length !== width * height)
-        throw new Error('Invalid tactile region dimensions');
-    const mask = new Uint8Array(baseline.length), gray = analysisGray(baseline, width, height);
-    const foreground = morphology(morphology(Uint8Array.from(gray, v => v > .075 ? 1 : 0), 3, true), 3);
-    const { curve, confidence } = fitArc(peaks(gray, foreground));
+function validCurve(curve, confidence) {
     const leftmost = curve.length ? Math.min(...curve) : Infinity;
-    if (curve.length !== ROI_HEIGHT || !curve.every(Number.isFinite) || !Number.isFinite(confidence) || confidence < .75 || curve[0] - leftmost < 25 || curve[ROI_HEIGHT - 1] - leftmost < 25)
-        return { mask, status: 'not-found', confidence: Number.isFinite(confidence) ? confidence : 0, curve };
-    const region = mainComponent(foreground);
-    for (let y = 0; y < ROI_HEIGHT; y++)
+    return curve.length === ROI_HEIGHT && curve.every(Number.isFinite) && Number.isFinite(confidence) && confidence >= .75 && curve[0] - leftmost >= 25 && curve[ROI_HEIGHT - 1] - leftmost >= 25;
+}
+function regionMask(foreground, curve, width, height) {
+    const region = mainComponent(foreground), mask = new Uint8Array(width * height);
+    const topSlope = (curve[TACTILE_RIM_INSET] - curve[0]) / TACTILE_RIM_INSET;
+    const bottomSlope = (curve[ROI_HEIGHT - 1] - curve[ROI_HEIGHT - 1 - TACTILE_RIM_INSET]) / TACTILE_RIM_INSET;
+    // Continue the rim beyond the image instead of treating its cut-off endpoints
+    // as flat caps. Otherwise a crescent leaks back in near the top/bottom corners.
+    const extended = Float64Array.from({ length: ROI_HEIGHT + 2 * TACTILE_RIM_INSET }, (_, i) => {
+        const y = i - TACTILE_RIM_INSET;
+        return y < 0 ? curve[0] + y * topSlope : y >= ROI_HEIGHT ? curve[ROI_HEIGHT - 1] + (y - ROI_HEIGHT + 1) * bottomSlope : curve[y];
+    });
+    for (let y = 0; y < ROI_HEIGHT; y++) {
+        let boundary = 0;
+        // Dilate the excluded side by a disk, rather than adding a horizontal offset
+        // that becomes too narrow wherever the arc slopes steeply.
+        for (let k = 0; k < rimOffsets.length; k++)
+            boundary = Math.max(boundary, extended[y + k] + rimOffsets[k]);
         for (let x = 0; x < ROI_WIDTH; x++)
-            if (x < curve[y] + 14)
+            if (x < boundary)
                 region[y * ROI_WIDTH + x] = 0;
+    }
     const eroded = morphology(region, 3);
     for (let y = 0; y < height; y++)
         for (let x = 0; x < width; x++)
             mask[y * width + x] = eroded[Math.min(ROI_HEIGHT - 1, Math.floor((y + .5) * ROI_HEIGHT / height)) * ROI_WIDTH + Math.min(ROI_WIDTH - 1, Math.floor((x + .5) * ROI_WIDTH / width))];
-    return { mask, status: mask.some(Boolean) ? 'ready' : 'not-found', confidence, curve };
+    return mask;
+}
+function regionForeground(gray) { return morphology(morphology(Uint8Array.from(gray, v => v > .075 ? 1 : 0), 3, true), 3); }
+function detectTactileRegion(baseline, width, height) {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || baseline.length !== width * height)
+        throw new Error('Invalid tactile region dimensions');
+    const gray = analysisGray(baseline, width, height), foreground = regionForeground(gray), rows = peaks(gray, foreground);
+    const primary = fitArc(rows);
+    let result = primary;
+    for (const method of ['local', 'broader']) {
+        if (method === 'broader')
+            result = fitArc(rows, true);
+        if (!validCurve(result.curve, result.confidence))
+            continue;
+        const mask = regionMask(foreground, result.curve, width, height);
+        if (mask.some(Boolean))
+            return { ...result, mask, status: 'ready', method };
+    }
+    return { ...primary, mask: new Uint8Array(baseline.length), status: 'not-found' };
+}
+function rimStrips(gray, curve) {
+    const rim = new Uint8Array(ROI_HEIGHT * 45);
+    for (let y = 0; y < ROI_HEIGHT; y++)
+        for (let k = 0; k < 45; k++)
+            rim[y * 45 + k] = Math.round(gray[y * ROI_WIDTH + Math.max(0, Math.min(ROI_WIDTH - 1, Math.round(curve[y]) + k - 12))] * 255);
+    return rim;
+}
+function regionGeometry(baseline, width, height, curve, confidence, episodeId = '') {
+    if (!validCurve(curve, confidence))
+        throw new Error('Invalid donor curve');
+    return { width, height, curve: curve.slice(), rim: rimStrips(analysisGray(baseline, width, height), curve), confidence, episodeId };
+}
+/** Validate a donor against the current rim without requiring another curve fit. */
+function borrowTactileRegion(baseline, width, height, donor) {
+    if (donor.width !== width || donor.height !== height || baseline.length !== width * height || donor.rim.length !== ROI_HEIGHT * 45 || !validCurve(donor.curve, donor.confidence))
+        return;
+    const gray = analysisGray(baseline, width, height), current = rimStrips(gray, donor.curve);
+    let upper = 0, lower = 0;
+    for (let y = 0; y < ROI_HEIGHT; y++) {
+        let a = 0, b = 0, aa = 0, bb = 0, ab = 0;
+        for (let k = 0; k < 45; k++) {
+            const u = current[y * 45 + k], v = donor.rim[y * 45 + k];
+            a += u;
+            b += v;
+            aa += u * u;
+            bb += v * v;
+            ab += u * v;
+        }
+        const va = aa - a * a / 45, vb = bb - b * b / 45;
+        if (va / 45 < 25 || vb / 45 < 25)
+            continue;
+        if ((ab - a * b / 45) / Math.sqrt(va * vb) >= .70) {
+            if (y < 180)
+                upper++;
+            else
+                lower++;
+        }
+    }
+    if (upper + lower < 180 || upper < 20 || lower < 20)
+        return;
+    const mask = regionMask(regionForeground(gray), donor.curve, width, height);
+    if (!mask.some(Boolean))
+        return;
+    return { mask, curve: donor.curve.slice(), confidence: donor.confidence, status: 'ready', method: 'neighbor' };
+}
+/** Geometry-only donor preparation: at most eight opening samples, no noise statistics. */
+function detectRegionSamples(frames, width, height) {
+    if (!frames.length || frames.some(f => f.length !== width * height))
+        return;
+    const median = new Uint8Array(width * height), values = new Uint8Array(frames.length);
+    for (let p = 0; p < median.length; p++) {
+        frames.forEach((f, i) => { values[i] = f[p]; });
+        values.sort();
+        median[p] = Math.floor((values[(values.length - 1) >> 1] + values[values.length >> 1]) / 2);
+    }
+    const region = detectTactileRegion(median, width, height);
+    return region.status === 'ready' ? regionGeometry(median, width, height, region.curve, region.confidence) : undefined;
 }
 
 
+function baselineGeometry(model, episodeId = '') {
+    return model.roiStatus === 'ready' && model.roiMethod !== 'neighbor' && model.roiCurve?.length
+        ? regionGeometry(model.baseline, model.width, model.height, model.roiCurve, model.roiConfidence, episodeId) : undefined;
+}
+function adoptBaselineRegion(model, donor) {
+    const region = borrowTactileRegion(model.baseline, model.width, model.height, donor);
+    return region ? { ...model, roiMask: region.mask, roiCurve: region.curve, roiStatus: region.status, roiConfidence: region.confidence, roiMethod: 'neighbor', roiDonor: donor.episodeId } : undefined;
+}
+function copyTactileBaseline(model) {
+    return { ...model, baseline: model.baseline.slice(), noiseFloor: model.noiseFloor.slice(), roiMask: model.roiMask.slice(), roiCurve: model.roiCurve?.slice() };
+}
 // Python round() uses ties-to-even, including for fractional recorded frame rates.
 function tactileBaselineCount(fps, totalFrames) {
     const value = 2 * (Number.isFinite(fps) && fps > 0 ? fps : 30);
@@ -336,7 +444,7 @@ class TactileCalibration {
         const region = detectTactileRegion(baseline, this.width, this.height);
         measure?.('region', performance.now() - regionStarted);
         return { width: this.width, height: this.height, sampleCount: n, baseline, noiseFloor,
-            roiMask: region.mask, roiStatus: region.status, roiConfidence: region.confidence };
+            roiMask: region.mask, roiStatus: region.status, roiConfidence: region.confidence, roiCurve: region.curve, roiMethod: region.method };
     }
     clear() { this.frames = []; }
 }

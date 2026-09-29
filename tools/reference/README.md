@@ -37,8 +37,19 @@ bilinear sampling to 640×360, a foreground surface check 14–30 pixels right o
 each candidate, confidence ≥0.75, and both arc endpoints extending at least 25
 pixels right of its leftmost point. Failed detections produce an empty mask.
 
-The runtime TypeScript detector preserves the anchored curve fit, dominant
-foreground component, 14-pixel inward margin and three erosion iterations. The
+The runtime TypeScript detector preserves the anchored curve fit and dominant
+foreground component. The viewer replaces the original 14-pixel horizontal margin
+with a 56-pixel Euclidean inward guard, followed by three erosion iterations. This
+excludes the wide optical rim and its steep upper/lower sections, which otherwise
+dominate the heatmap. The independent adapter uses the same guard for mask goldens;
+the original detection reference remains unchanged. The
 mask maps back by pixel-centre nearest-neighbor sampling and remains fixed with
 the baseline. It applies before smoothing and after coloring, also in Show all
 changes mode. Python, NumPy and Pillow are offline validation tools only.
+
+The adapter now retries failed fits over the full existing vertex envelope.
+Checked neighbor recovery uses 45-pixel rim strips, correlation ≥0.70 on at least
+180 rows and at least 20 rows in each half, excluding rows with standard deviation
+below five. It borrows only the curve and rebuilds the mask from the current image.
+`python3 tests/make_tactile_neighbor_reference.py` generates independent synthetic
+transfer goldens. The original supplied scripts remain unchanged.

@@ -78,12 +78,12 @@ try{
  if(process.env.RDV_LIVE){
   await seek(0);
   await evaluate(`{
-   window.__liveSamples=[];window.__livePaints={};window.__originalDraw=CanvasRenderingContext2D.prototype.drawImage;
-   CanvasRenderingContext2D.prototype.drawImage=function(...args){const r=window.__originalDraw.apply(this,args);const c=this.canvas.closest?.('.difference-cell');if(c){const id=c.closest('.media-card').dataset.channel;window.__livePaints[id]=(window.__livePaints[id]||0)+1;}return r;};
+   window.__liveSamples=[];window.__livePaints={};window.__originalDraw={};
+   for(const method of ['drawImage','putImageData']){window.__originalDraw[method]=CanvasRenderingContext2D.prototype[method];CanvasRenderingContext2D.prototype[method]=function(...args){const r=window.__originalDraw[method].apply(this,args);const c=this.canvas.closest?.('.difference-cell');if(c){const id=c.closest('.media-card').dataset.channel;window.__livePaints[id]=(window.__livePaints[id]||0)+1;}return r;};}
    window.__liveTimer=setInterval(()=>window.__liveSamples.push({at:performance.now(),time:Number(document.querySelector('.timeline').value),busy:!!document.querySelector('.playback-bar .spin'),channels:[...document.querySelectorAll('.tactile-card')].map(c=>{const a=window.__pixels(c.querySelector('.difference-cell canvas'));let strong=0;for(let i=0;i<a.length;i+=4)if(Math.max(a[i],a[i+1],a[i+2])>100)strong++;return {id:c.dataset.channel,strong,paints:window.__livePaints[c.dataset.channel]||0};})}),200);
   }`);
   await click('.play-button');await delay(6500);await click('.play-button');
-  const samples=await evaluate('clearInterval(window.__liveTimer);CanvasRenderingContext2D.prototype.drawImage=window.__originalDraw;window.__liveSamples');
+  const samples=await evaluate('clearInterval(window.__liveTimer);Object.assign(CanvasRenderingContext2D.prototype,window.__originalDraw);window.__liveSamples');
   const contacts=samples.filter(s=>s.time>=3500&&s.time<=5500),last=samples.at(-1);
   report.live={wallMs:last.at-samples[0].at,advancedMs:last.time-samples[0].time,busySamples:samples.filter(s=>s.busy&&s.at>samples[0].at+500).length,channels:last.channels,contactSamples:contacts.length,visibleContacts:contacts.filter(s=>s.channels.every(c=>c.strong>100)).length};
   assert.ok(report.live.advancedMs>=report.live.wallMs*.98);assert.equal(report.live.busySamples,0);

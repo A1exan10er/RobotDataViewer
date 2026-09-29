@@ -2,10 +2,11 @@ import workerCode from '../tools/tactile-worker.js?raw';
 import filterCode from '../vendor/tactile-filter.js?raw';
 import { TactilePlayback } from './tactilePlayback';
 import { cloneBaseline } from './tactileCache';
+import type { RegionGeometry } from './tactileRoi';
 import type { TactileBaseline } from './tactileFilter';
 let workerUrl='';
 export type TactileImage=ImageBitmap|(ImageData & {close():void});
-type Reply={image?:TactileImage;reference?:TactileBaseline;pixels?:ArrayBuffer;width?:number;height?:number};
+type Reply={geometry?:RegionGeometry;image?:TactileImage;reference?:TactileBaseline;pixels?:ArrayBuffer;width?:number;height?:number};
 export class TactileRenderer {
   private capture:HTMLCanvasElement|null=null;
   private worker:Worker;private serial=0;private disposed=false;private initialized=false;
@@ -44,6 +45,8 @@ export class TactileRenderer {
     try{return await this.rpc({kind,bitmap,gain,cleanup},[bitmap]);}
     catch(error){bitmap.close();throw error;}
   }
+  async geometry(episodeId:string){return (await this.rpc({kind:'geometry',episodeId})).geometry;}
+  async adoptRegion(donor:RegionGeometry){return (await this.rpc({kind:'adoptRegion',donor})).reference;}
   async sample(source:ImageBitmapSource){await this.send('sample',source);}
   async calibrated(){const reply=await this.rpc({kind:'calibrated'});this.initialized=true;return reply.reference!;}
   async reference(reference:TactileBaseline){await this.rpc({kind:'reference',reference:cloneBaseline(reference),pixelMode:this.pixelMode});this.initialized=true;}

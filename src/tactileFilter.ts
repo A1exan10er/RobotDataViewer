@@ -1,11 +1,24 @@
-import { detectTactileRegion } from './tactileRoi.ts';
+import { detectTactileRegion, borrowTactileRegion, regionGeometry, type RegionGeometry, type RegionMethod } from './tactileRoi.ts';
 
 /** Fixed, calibrated image response. No contact inference or temporal adaptation. */
 export type TactileBaseline = {
   width: number; height: number; sampleCount: number;
   baseline: Uint8Array; noiseFloor: Float32Array;
   roiMask: Uint8Array; roiStatus: 'ready' | 'not-found'; roiConfidence: number;
+  roiCurve?: Float32Array; roiMethod?: RegionMethod; roiDonor?: string;
 };
+
+export function baselineGeometry(model:TactileBaseline,episodeId=''):RegionGeometry|undefined {
+  return model.roiStatus==='ready'&&model.roiMethod!=='neighbor'&&model.roiCurve?.length
+    ?regionGeometry(model.baseline,model.width,model.height,model.roiCurve,model.roiConfidence,episodeId):undefined;
+}
+export function adoptBaselineRegion(model:TactileBaseline,donor:RegionGeometry):TactileBaseline|undefined {
+  const region=borrowTactileRegion(model.baseline,model.width,model.height,donor);
+  return region?{...model,roiMask:region.mask,roiCurve:region.curve,roiStatus:region.status,roiConfidence:region.confidence,roiMethod:'neighbor',roiDonor:donor.episodeId}:undefined;
+}
+export function copyTactileBaseline(model:TactileBaseline):TactileBaseline {
+  return {...model,baseline:model.baseline.slice(),noiseFloor:model.noiseFloor.slice(),roiMask:model.roiMask.slice(),roiCurve:model.roiCurve?.slice()};
+}
 
 // Python round() uses ties-to-even, including for fractional recorded frame rates.
 export function tactileBaselineCount(fps: number, totalFrames: number): number {
@@ -75,7 +88,7 @@ export class TactileCalibration {
     const region = detectTactileRegion(baseline, this.width, this.height);
     measure?.('region', performance.now() - regionStarted);
     return { width: this.width, height: this.height, sampleCount: n, baseline, noiseFloor,
-      roiMask: region.mask, roiStatus: region.status, roiConfidence: region.confidence };
+      roiMask: region.mask, roiStatus: region.status, roiConfidence: region.confidence, roiCurve: region.curve, roiMethod: region.method };
   }
   clear(): void { this.frames = []; }
 }

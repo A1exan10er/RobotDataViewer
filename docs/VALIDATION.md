@@ -1,5 +1,260 @@
 # Validation
 
+## Portable 1.2.1: exclude the optical rim (final revision)
+
+The user identified bright arc-shaped responses dominating the useful tactile
+changes. The detected curve follows the **outer** optical rim; the old 14-pixel
+horizontal inset did not exclude the full rim, particularly at its sloping ends.
+The final display mask uses a **56-analysis-pixel Euclidean inward band** plus the
+existing three erosion iterations. Endpoint continuation prevents small crescent
+leaks at the top/bottom image boundaries. This guard is measured in the canonical
+640×360 image and maps to the original frame without cropping or changing its
+orientation. The region stays fixed throughout playback and settings changes.
+
+The exclusion is applied before smoothing and after coloring, including Show all
+changes. Detection, neighbor matching, baseline/noise statistics, gain, gamma and
+coloring are unchanged. The calibration cache revision is advanced to reject old
+masks. Strong interior contact is preserved, rather than globally reducing gain or
+suppressing bright response values. Neighbor recovery rebuilds this same inner mask
+from the current episode's foreground.
+
+All 52 local baselines still pass. The 11 detector and 7 borrowed-mask NumPy goldens
+were regenerated for the new mask geometry; fitted curves and confidence remain
+unchanged. A new regression draws a bright, moving 50-pixel-wide rim around the
+whole arc and requires opaque black output with smoothing both on and off. A
+separate saturated interior patch retains its original color. Unit tests pass all
+12 files, Python tests all eight cases, and the production build passes. Evidence:
+`artifacts/rim-exclusion/{oracle,unit,python,baselines,build}-final.log`.
+
+The reported 0157 recording was checked from the extracted final ZIP: cold joint
+startup **1614 ms**, cached **666 ms**, with all four tactile panels visible.
+Forcing every local arc result to fail requires actual neighbor recovery: cold
+**1901 ms**, cached **733 ms**. The latter run also passes rapid seeks/stepping,
+paused gain/Show all changes, rate changes, donor-cache reuse, different episode
+orders, source replacement and cancellation during a delayed probe. Each sensor
+samples exactly eight donor frames, and cached returns add no donor probes or
+calibration work. Normal English and expanded Chinese views were inspected: the
+bright arc is gone, with the interior image response retained. Evidence:
+`artifacts/firefox/rim-final-{reported,recovery}.json`.
+
+Forced-software playback from the parent folder passes at **1870 / 750 ms**
+cold/cached; compatibility playback from TAR passes at **1954 / 617 ms**. All four
+final-mode runs advance **5983–6001 ms in 6011–6016 ms**, with **680–718 tactile
+paints** across four panels in six seconds. Host endpoints recorded **1723–3045 MiB
+available RAM**, essentially full 8 GiB swap, and ten-second full-memory-stall
+pressure **0–1.02%**. No other applications were stopped; browsers, builds and tests
+ran serially. Earlier memory-pressure timing failures remain documented below;
+these measurements are not a guarantee under arbitrary system load. Evidence:
+`artifacts/firefox/rim-final-{reported,recovery,software,compat}.json`.
+
+On identical episode-0157 inputs at six seconds, yellow/white rim pixels
+(R ≥235, G ≥150) decrease **2433 → 0** and **2639 → 0** on the two left sensors.
+Interior pixels beyond the eight-pixel blur footprint remain byte-identical.
+Across all 52 baselines, the inner mask retains **88.5–90.8%** of the previous mask
+area; all fitted curves and confidence values are unchanged. The final masks for
+0156, 0157 and 0159 match the independent Python mask construction with **zero
+pixel mismatches**. Representative responses from all 12 existing capping,
+folding and sorting channels were also inspected. Evidence:
+`artifacts/rim-exclusion/{before-after.png,response-final.log,local-contact-check.jpg,mask-oracle-final.json}`.
+
+The final compatibility pixel/control suite with 120 ms delayed rendering replies
+passes: identical inputs/models produce zero byte mismatches, outside-only changes
+stay opaque black, and Show all changes never exposes the rim. Synthetic playback
+has zero buffering samples and continued tactile updates. Evidence:
+`artifacts/rim-final-pixels/results.json`.
+
+**Final delivery:** `dist/RobotDataViewer-1.2.1.zip` (also `RobotDataViewer.zip`),
+**20,243,766 bytes**. ZIP CRC and SHA-256 checks pass. The extracted viewer matches
+the production build, packaged source files match the workspace, and rebuilding
+those packaged sources reproduces the viewer byte for byte. No recordings,
+diagnostics or credentials are included. Evidence:
+`artifacts/rim-exclusion/{portable-integrity-final.json,source-build-final.log}`.
+
+SHA-256: `141127439ab98453a6967c8a6f889f6575d04cb345ec3dfbddd28b462b2a38fb`.
+
+The following recovery-candidate section is historical evidence from before this
+requested mask refinement. Its masks, package hashes and package timings describe
+that earlier candidate; the final package and measurements are recorded above it.
+Historical failed runs remain failures.
+
+## 1.2.1 recovery candidate, before rim exclusion (2026-09-28)
+
+The local detector is unchanged for successful fits. A failed fit retries the full
+reference search envelope before consulting up to four matching neighboring
+recordings. Matching uses task, operator, robot, sensor channel, dimensions and
+collector identity; missing identities require a shared recording session. The
+selected episode's grayscale median and noise estimate are never borrowed. Only
+independently validated curves and compact rim descriptors are reusable. Borrowed
+masks use the current image's foreground component, inward margin and erosion.
+Both the initial heatmap and subsequent rendering enforce that resolved mask.
+
+Donor probing runs inside the existing two-job calibration scheduler. Each probe
+uses a separate demuxer/decoder context in the same worker and reads at most eight
+opening grayscale samples, without rewinding the selected decoder or loading any
+neighbor RGB/trajectory data. Model and geometry entries share the 32 MiB LRU.
+Source replacement cancels probes and clears both. Failure results are not cached.
+A borrowed result cannot become an independent donor. The native capture path
+creates a temporary probe worker only when it needs one, then releases it.
+
+### Numerical and local-image checks
+
+All **40 charger-task baselines** (episodes 0151–0160, four sensors each) and the
+previous **12 capping/folding/sorting baselines** pass. A direct comparison against
+checkpoint `e6ecf85` confirms all **49 previously successful detections** retain
+byte-identical curves/masks and identical confidence. Contact sheets of all 52
+masks were inspected: the right sensing surface is retained, while neighboring
+rims and the outer background remain excluded. The previously failing right-hand
+left sensor in **0156, 0157 and 0159** is recovered by the broader search, with
+confidence **0.91457 / 0.91608 / 0.91550**. Each of these masks matches the independent
+NumPy reference exactly; maximum curve difference is **0.000031 analysis pixels**,
+well below the one-pixel tolerance. Evidence: `artifacts/region-validation/` and
+`tools/check-region-baselines.mjs` (requires the local ignored baseline samples).
+
+The broader fit now reuses candidate-row buffers instead of allocating a point
+object for every supported row of every candidate. Existing successful fits and
+numerical goldens remain unchanged. Eleven detection oracle cases cover curved and
+neighboring rims, biased anchors, straight/weak/noisy edges, blank images, contact
+and odd dimensions. Seven independent NumPy transfer cases check exact borrowed
+masks, contrast changes, partial occlusion, remounting/shift, blank inputs and
+vertical support. Unit tests also cover identity conflicts, missing IDs, sensor
+channels, dimension filtering, four-candidate bounds, corrupt/absent donors,
+short clips, unchanged inputs, stale cancellation, cache eviction/source lifetime,
+non-transitive borrowing, and zero outside response with smoothing or Show all
+changes. Actual worker orchestration tests verify separate donor contexts, eight
+samples, short EOF, resource release and unchanged selected-decoder position.
+
+`npm test` passes **12 files**, serially. `npm run test:python` passes **eight tests**.
+`npm run build` passes type checking and produces the self-contained 1.2.1 viewer.
+Evidence: `artifacts/region-{unit,python,build}-final.log`.
+
+### Final portable playback and recovery checks
+
+The extracted **1.2.1 ZIP's actual `viewer.html`** was opened in isolated Firefox 156,
+with episode **0157 selected first** from the charger TAR or its extracted parent
+folder. Tests deliberately forced all four local calibration replies to fail arc
+detection, so successful panels must actually borrow validated neighbor geometry
+before staging. This is stronger than merely observing that the broader fit now
+works. The reported sensor, right-hand/left, borrowed episode **0158** successfully.
+
+- Default native-RGB/sequential-tactile path, TAR, three cold starts:
+  **1871 / 1787 / 1804 ms**; cached **586 / 638 / 637 ms**.
+- Forced software for all seven channels, parent folder: **1777 ms** cold,
+  **821 ms** cached.
+- Compatibility pixels (OffscreenCanvas and createImageBitmap disabled), TAR:
+  **1898 ms** cold, **521 ms** cached.
+- Optional `?nativeTactile=1` diagnostic path: **3599 ms** cold, **323 ms** cached.
+  It completes recovery and playback, and releases all four temporary probe
+  workers, but **fails the three-second cold-start target**. H.264/HEVC tactile
+  recordings use the faster sequential path by default.
+
+Without fault injection, the reported 0157 episode starts in **1427 ms** cold and
+**589 ms** cached. Its right-hand/left sensor uses the broader fit; the other three
+retain their original local fits. An **18-second** run advanced **18017 ms in
+18032 ms**, with **2160 tactile paints** and no preparation/reveal errors. Endpoint
+available RAM was **1776–2778 MiB**, full-memory-stall pressure **0.08–0.40%**.
+Evidence: `artifacts/firefox/region-portable-reported.json`.
+
+Every successful run requires seven panels, the selected episode, a current-generation
+staged tactile frame from all four sensors and simultaneous reveal. RGB and the
+clock remain held until readiness. Every cached return has exactly four model
+cache-hit events, no calibration start/sampling/fitting, and no additional donor
+probe. Startup has zero selected-decoder rewinds. Steady workers are four (seven
+with software RGB). Default eight-second playback advanced **7983–8001 ms in
+8013–8018 ms** with **955–957 total tactile paints**. Software/compatibility six-second
+playback advanced **6000 / 5983 ms** with **668 / 716 paints**, respectively. No page
+errors or partial reveal were reported. Normal English and expanded Chinese views,
+including recovery badges and the excluded black region, were visually inspected.
+Evidence: `artifacts/firefox/region-portable-{neighbor,software,compat,native}.json`.
+
+The passing portable runs recorded **1342–3023 MiB available RAM**, essentially
+full 8 GiB swap on this 15 GiB host, and ten-second full-memory-stall pressure of
+**0.03–0.79%**. Tests and builds were serial; no existing applications were closed.
+Timings run from episode selection through joint presentation, including metadata,
+calibration, probing and frame preparation. Folder/TAR indexing precedes this startup interval.
+
+The dedicated forced-recovery control run completed cold/cached preparation in
+**2046 / 581 ms**. It verifies rapid seeks, stepping (target 2504 ms; all tactile
+frames 2500 ms), paused gain and Show all changes, rate changes, and different
+browsing orders. Episodes 0154 and 0156 reuse cached independently detected donor
+0155 geometry without new donor sampling. Source replacement clears that cache;
+interrupting actual donor probes with delayed replies then switching episodes
+releases obsolete workers and preserves queued Play cancellation. The final
+selection returns to 0157 successfully. Evidence:
+`artifacts/firefox/region-controls-session.json`.
+
+The existing delayed-start/control browser suite also passes on this build:
+five-second calibration delay holds RGB and the clock, settings/seek replies stay
+current, four cache hits require no additional fitting, native RGB fallback
+re-enters readiness, and synchronous canvas, redraw and pre-registration worker
+failures remain panel-local. The browser made no network requests and raised no
+page errors (`artifacts/region-joint-controls/results.json`).
+
+The compatibility pixel/control suite reports **zero byte mismatches** and **zero
+nonblack excluded pixels** on identical decoded inputs and models, including
+settings changes during staging, gain, Show all changes, repeated seeks and
+outside-only contact. Synthetic playback advanced **6200 ms in 6199.7 ms**, with
+zero buffering samples, **191 paints per sensor** and visible contact in **10/10**
+sampled contact moments (`artifacts/region-pixels-compat-checked/results.json`).
+Its first attempt (`region-pixels-compat/results.json`) had an instrumentation
+failure: the live counter watched only `drawImage`, while compatibility paints
+through `putImageData`. Both APIs are now counted; the first run remains failed.
+
+The bitmap software pixel/control run, with **120 ms delayed rendering replies**,
+also has zero pixel/outside-mask mismatches and no page/network errors. It advances
+**6200 ms in 6199.9 ms**, with zero buffering samples, **191 paints per sensor** and
+visible contact in **10/10** samples. Evidence:
+`artifacts/region-pixels-software/results.json`.
+
+A final instrumented portable cache check measured **1968 / 589 ms** cold/cached.
+It requires exactly **four donor probes**, exactly **eight sampled donor frames per
+sensor**, and **no additional donor probes** on cached return, alongside the four
+model cache-hit events (`artifacts/firefox/region-portable-cache-check.json`).
+
+### Portable package integrity
+
+`dist/RobotDataViewer.zip` is **20,240,298 bytes**, version **1.2.1**. ZIP CRC checks
+pass, and the extracted viewer is byte-identical to the production build. The app
+source archive contains the new recovery implementation; the distribution includes
+both quick starts, notices, decoder sources and rebuild instructions, and contains
+no recordings, diagnostic artifacts, credentials or installed dependency directory.
+Evidence: `artifacts/region-portable-integrity.json`.
+
+SHA-256: `61ed410a71520f648a6aefa34a177826023cb7d9146aa835be2686c937856deb`.
+
+### Timing failures retained
+
+A pre-allocation-fix normal series measured cold **1484 / 1455 / 1467 / 1358 /
+5491 ms**, cached **600 / 642 / 650 / 635 / 822 ms**. The last cold start failed the
+three-second target, at about **715 MiB available RAM**, full swap and **7.11%**
+ten-second full-memory-stall pressure. The five-run final-code normal series also
+**failed** its performance gate: cold **6850 / 9242 / 1417 / 1484 / 1439 ms**, cached
+**4983 / 1005 / 591 / 635 / 677 ms**. Functional joint readiness and continued
+playback completed, but the slow repetitions are not passes. The allocation change
+therefore does not establish a universal three-second guarantee under host memory
+pressure. Evidence: `artifacts/firefox/region-broader-{five,final}.json`.
+
+A pre-allocation-fix forced-neighbor series completed five cold starts in **1997 /
+1912 / 1788 / 1922 / 1816 ms**, cached **670 / 682 / 623 / 750 / 655 ms**, with all four
+sensors borrowing episode 0158 and six-second playback advancing 5983–6017 ms.
+Its per-run `hostBefore` fields were overwritten by a harness variable error;
+global before and per-run after memory snapshots are valid (after: 1070–1199 MiB
+available). These are candidate-build measurements, not final-package timings.
+
+Harness failures are preserved separately: `region-neighbor-smoke.json`
+selected 0151 because an isolated JavaScript realm's sort was patched instead of
+`window.Array`, so it is not evidence for opening 0157 first. `region-controls-final.json`
+completed actual frame preparation but its wait lost staged paint marks when the
+app's bounded diagnostic history cleared. The corrected harness records actual
+staged acknowledgements independently and counts every paint, while still requiring
+the selected episode, expected panel count, current generation and simultaneous
+reveal. Two further control-harness attempts (`region-controls-checked.json` and
+`region-controls-isolated.json`) used incorrect fixture assumptions for donor-cache
+reuse: the first-selection sort override initially affected later donor ordering,
+and 0159 actually prefers 0160 by capture time, not 0158. The override now restores
+the original sort immediately after initial selection, and the cache check uses
+0154/0156, whose actual nearest donor is 0155. None of these failed harness runs is
+counted as a passing control run.
+
 ## Portable 1.2.0: sequential tactile startup (2026-09-28)
 
 The portable viewer now keeps native RGB playback where available and selects the

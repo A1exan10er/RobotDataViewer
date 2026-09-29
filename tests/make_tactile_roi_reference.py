@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'reference'))
-from tactile_roi import detect_region, synthetic_baseline
+from tactile_roi import detect_region, synthetic_baseline, biased_neighbor_baseline
 
 
 def encode(array):
@@ -16,6 +16,7 @@ def encode(array):
 
 cases = []
 inputs = {
+    'biased-neighbor': biased_neighbor_baseline(),
     'curved-rim': synthetic_baseline(neighbor=False),
     'neighboring-rim': synthetic_baseline(),
     'existing-contact': synthetic_baseline(contact=True),
@@ -31,7 +32,7 @@ for name, baseline in inputs.items():
     region = detect_region(baseline)
     cases.append(dict(name=name, width=baseline.shape[1], height=baseline.shape[0],
                       baseline=encode(baseline), mask=encode(region['mask']),
-                      curve=encode(region['curve'].astype('<f4')), status=region['status'], confidence=region['confidence']))
+                      curve=encode(region['curve'].astype('<f4')), status=region['status'], confidence=region['confidence'], method=region['method']))
     print(name, region['status'], round(region['confidence'], 4), flush=True)
 path = Path(__file__).parent / 'fixtures' / 'tactile-roi.json'
 path.write_text(json.dumps(dict(description='NumPy arc detection goldens; arrays are zlib + base64', cases=cases), indent=2) + '\n')

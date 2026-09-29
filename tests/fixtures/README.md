@@ -22,3 +22,9 @@ are calculated independently from these constants in the browser check.
 The tactile browser fixture generator also emits `artifacts/tactile-fixtures/prepared`,
 a version-1 manifest using the same encoded frames without codec metadata. This
 checks automatic codec probing and the sequential tactile path for older packages.
+
+`tactile-roi.json` also includes a bright neighboring edge that biases the initial
+anchor; only the full-envelope retry recovers its real arc. `tactile-neighbor.json`
+contains independent NumPy checked-transfer masks for identical/brightness-shifted/
+partly occluded rims and rejected shifted, blank and noisy images. Regenerate with
+`python3 tests/make_tactile_neighbor_reference.py`. No customer data is included.

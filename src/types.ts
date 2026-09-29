@@ -6,7 +6,9 @@ export type Media = {
   width: number; height: number; fps: number; frames: number; duration: number;
   codec?: string; failed?: boolean;
 };
+export type CaptureContext = { task:string; operator:string; device?:string; session?:string; time?:number };
 export type Episode = {
+  capture?: CaptureContext;
   id: string; title: string; robot: string; durationMs: number; data: string;
   media: Media[]; issues: Issue[]; sourceName: string;
   /** Original companion exports keep UMI metadata and numeric channels here. */
