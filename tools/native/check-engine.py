@@ -32,4 +32,7 @@ with tempfile.TemporaryDirectory() as root:
     def fallback(provider):e.session=Session();e.backend=provider
     e._session=fallback;track,stats=e.estimate(path,'l_tact_l')
     assert e.backend=='CPUExecutionProvider' and len(e.fallback)==1 and len(track['time'])==8
+    e=engine();e.session.run=lambda *_:(np.array([[np.nan,0]],np.float32),np.array(.8,np.float32));e.backend='CUDAExecutionProvider'
+    e._session=fallback;track,stats=e.estimate(path,'l_tact_l')
+    assert e.backend=='CPUExecutionProvider' and all(np.isfinite(track['fz']))
 print('PASS: exact duplicates preserve nonzero reference, ordered all-frame results, cancellation, GPU failure fallback')

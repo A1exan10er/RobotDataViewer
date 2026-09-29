@@ -2,8 +2,8 @@
 import argparse,json,os,subprocess,time,urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qs
-p=argparse.ArgumentParser();p.add_argument('launcher',type=Path);p.add_argument('--source',type=Path);p.add_argument('--storage',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-command=[str(a.launcher.resolve()),'--no-browser','--storage',str(a.storage.resolve())]
+p=argparse.ArgumentParser();p.add_argument('--provider',default='auto');p.add_argument('launcher',type=Path);p.add_argument('--source',type=Path);p.add_argument('--storage',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
+command=[str(a.launcher.resolve()),'--no-browser','--storage',str(a.storage.resolve()),'--provider',a.provider]
 process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
 report={};job=None
 try:

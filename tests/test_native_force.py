@@ -97,5 +97,16 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(len(self.call('/api/v1/cache','POST',{'items':[identity(t)]})['tracks']),1)
         self.assertEqual(self.call('/api/v1/cache','DELETE',{'items':[identity(t)]})['bytes'],0)
         self.assertIsNone(self.app.active)
+    def test_cancellation_when_worker_exits_during_enumeration(self):
+        import psutil
+        from unittest.mock import Mock,patch
+        job=self.app.create([identity(fixture())])
+        process=Mock(pid=12345);process.poll.return_value=None;job['process']=process
+        with patch('psutil.Process',side_effect=psutil.NoSuchProcess(process.pid)):
+            self.app.cancel(job)
+            self.app.cancel(job)
+        self.assertEqual(job['state'],'cancelled');self.assertIsNone(self.app.active)
+        self.assertFalse(job['directory'].exists())
+        job['process']=None
 
 if __name__=='__main__':unittest.main()

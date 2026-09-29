@@ -33,7 +33,7 @@ with socket.socket() as sock:
 log = (output / (a.label + '.log')).open('w')
 driver = subprocess.Popen([a.driver, '--port', str(port), '--profile-root', str(profile)], stdout=log, stderr=log)
 session = None
-report = {'source':str(source), 'viewer':a.viewer, 'hostBefore':{}}
+report = {'source':str(source), 'viewer':a.viewer.split('#',1)[0], 'hostBefore':{}}
 
 def host():
     return {'memory':Path('/proc/meminfo').read_text(), 'pressure':Path('/proc/pressure/memory').read_text()}
@@ -114,7 +114,7 @@ try:
     evaluate("document.querySelector('.force-toolbar').scrollIntoView({block:'start'});")
     import base64
     (output/(a.label+'-normal-en.png')).write_bytes(base64.b64decode(command('/screenshot',method='GET')))
-    evaluate("document.querySelector('[data-channel=l_tact_l] .icon-button').click();document.querySelector('.language-button').click();")
+    evaluate("document.querySelector('.language-button').click();document.querySelector('[data-channel=l_tact_l] .icon-button').click();")
     (output/(a.label+'-expanded-zh.png')).write_bytes(base64.b64decode(command('/screenshot',method='GET')))
     evaluate("document.querySelector('.expanded-close').click();document.querySelector('.language-button').click();")
     evaluate("{const s=document.querySelector('.timeline');s.value=0;s.dispatchEvent(new Event('input',{bubbles:true}));}");wait(ready)

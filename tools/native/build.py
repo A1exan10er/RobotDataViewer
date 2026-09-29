@@ -42,6 +42,14 @@ for doc in ('THIRD_PARTY_NOTICES.md','docs/QUICKSTART_EN.md','docs/QUICKSTART_ZH
 for file in (ROOT/'sources').iterdir():
     if file.is_file():shutil.copy2(file,output/'sources'/file.name)
 licenses=output/'licenses';licenses.mkdir(exist_ok=True)
+python_licenses=[Path(sys.base_prefix)/'LICENSE.txt',Path(sys.base_prefix)/'LICENSE',Path('/usr/share/doc')/('python'+'.'.join(platform.python_version_tuple()[:2]))/'copyright']
+for path in python_licenses:
+    if path.is_file():shutil.copy2(path,licenses/'Python.txt');break
+else:
+    import urllib.request
+    text=urllib.request.urlopen('https://raw.githubusercontent.com/python/cpython/v'+platform.python_version()+'/LICENSE',timeout=30).read()
+    (licenses/'Python.txt').write_bytes(text)
+
 packages=['numpy','opencv-contrib-python-headless','psutil','pyinstaller', 'onnxruntime-gpu' if a.nvidia else 'onnxruntime-directml' if system=='windows' else 'onnxruntime']
 if a.nvidia:packages+=[d.metadata['Name'] for d in importlib.metadata.distributions() if d.metadata['Name'].startswith('nvidia-')]
 versions={}
@@ -53,10 +61,15 @@ for package in packages:
             if source.is_file():shutil.copy2(source,licenses/(package+'-'+str(file).replace('/','_').replace('\\','_')))
 shutil.copytree(ROOT/'vendor/force/licenses',licenses/'force',dirs_exist_ok=True)
 (output/'BUILD.json').write_text(json.dumps({'version':version,'platform':label,'python':platform.python_version(),'dependencies':versions},indent=2)+'\n')
-(output/'START_HERE.txt').write_text('Extract completely. Run '+name+extension+' (macOS: Start Viewer.command).\nKeep the launcher open while viewing. No Python installation is required.\n首次使用请完整解压，运行启动器并保持其开启；无需安装 Python。\n'+('Install this directory as nvidia beside the base launcher.\n将此文件夹重命名为 nvidia，放在主启动器旁。\n' if a.nvidia else ''),encoding='utf-8')
+start=('Extract the nvidia directory beside the base RobotDataViewer launcher, then run the base launcher.\nThe base launcher automatically uses this optional engine. A compatible NVIDIA driver is required.\n将 nvidia 文件夹解压到主启动器旁，运行主启动器即可自动使用此加速组件。需要兼容的 NVIDIA 驱动。\n' if a.nvidia else
+ 'Extract completely. Run '+name+extension+' (macOS: Start Viewer.command).\nKeep the launcher open while viewing. No Python installation is required.\n首次使用请完整解压，运行启动器并保持其开启；无需安装 Python。\n')
+(output/'START_HERE.txt').write_text(start,encoding='utf-8')
 archive=ROOT/'dist'/f'RobotDataViewer-{version}-{label}.zip'
 with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
     for file in sorted(output.rglob('*')):
         if file.is_file():z.write(file,Path('nvidia' if a.nvidia else 'RobotDataViewer')/file.relative_to(output))
-archive.with_suffix('.zip.sha256').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
+digest=hashlib.sha256()
+with archive.open('rb') as stream:
+    for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
+archive.with_suffix('.zip.sha256').write_text(digest.hexdigest()+'  '+archive.name+'\n')
 print(archive)

@@ -8,18 +8,27 @@ const local=location.protocol==='http:'&&location.hostname==='127.0.0.1';
 const fragment=new URLSearchParams(location.hash.slice(1));
 let token=local?fragment.get('native'):null;
 if(local){
-  if(token){sessionStorage.setItem('rdv-native-token',token);history.replaceState(null,'',location.pathname+location.search);}
-  else token=sessionStorage.getItem('rdv-native-token');
+  try{
+    if(token)sessionStorage.setItem('rdv-native-token',token);
+    else token=sessionStorage.getItem('rdv-native-token');
+  }catch{/* A private browser may disable storage; the launch token still works in memory. */}
+  if(fragment.has('native'))history.replaceState(null,'',location.pathname+location.search);
 }
 export function nativeIdentity(item:NativeItem){
   return {sensor:item.media.id,video:{sha256:item.sha,bytes:item.blob.size,frames:item.timing.media.length,width:item.media.width,height:item.media.height},
     model:{id:manifest.model,weightsSha256:manifest.weightsSha256,pipeline:manifest.pipeline},reference:{frame:0,time:item.timing.media[0]},time:Array.from(item.timing.media)};
 }
 async function request(path:string,method='GET',body?:unknown,signal?:AbortSignal,headers:Record<string,string>={}){
-  const response=await fetch('/api/v1/'+path,{method,signal,headers:{Authorization:'Bearer '+token,...headers,...(body&&!(body instanceof Blob)?{'Content-Type':'application/json'}:{})},
+  signal?.throwIfAborted();
+  const deadline=new AbortController(),forward=()=>deadline.abort(signal?.reason);
+  signal?.addEventListener('abort',forward,{once:true});
+  const timer=setTimeout(()=>deadline.abort(new Error('Native force request timed out')),30000);
+  try{
+  const response=await fetch('/api/v1/'+path,{method,signal:deadline.signal,headers:{Authorization:'Bearer '+token,...headers,...(body&&!(body instanceof Blob)?{'Content-Type':'application/json'}:{})},
     body:body instanceof Blob?body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',credentials:'omit'});
   if(!response.ok)throw new Error(`Native force service: ${response.status}`);
-  return response.json();
+  return await response.json();
+  }finally{clearTimeout(timer);signal?.removeEventListener('abort',forward);}
 }
 let previousJob:Promise<void>=Promise.resolve();
 export const nativeForce=token?{
@@ -49,9 +58,9 @@ export const nativeForce=token?{
         signal.throwIfAborted();const state=await request('jobs/'+id,'GET',undefined,signal);
         if(state.progress)progress({...state.progress,elapsed:(performance.now()-started)/1000});
         else progress({sensor:items[0].media.id,frame:0,frames:0,stage:'loading',elapsed:(performance.now()-started)/1000});
-        if(state.state==='failed')throw new Error('Native engine failed');
+        if(state.state==='failed'&&!state.tracks?.length)throw new Error('Native engine failed');
         if(state.state==='cancelled')throw new DOMException('Cancelled','AbortError');
-        if(state.state==='complete')return {tracks:parseForceTracks({format:'robot-data-viewer-force',version:1,tracks:state.tracks}),errors:state.errors,diagnostics:{sensors:state.diagnostics,transfer:state.transfer}};
+        if(state.state==='complete'||state.state==='failed')return {tracks:parseForceTracks({format:'robot-data-viewer-force',version:1,tracks:state.tracks}),errors:state.errors,diagnostics:{sensors:state.diagnostics,transfer:state.transfer}};
         await new Promise<void>((resolve,reject)=>{
           const cancel=()=>{clearTimeout(timer);reject(signal.reason);};
           const timer=setTimeout(()=>{signal.removeEventListener('abort',cancel);resolve();},200);

@@ -73,6 +73,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
   async function prepare(){
     cancel();tracks.value={};errors.value={};notice.value='';diagnostics.value=null;
     if(!enabled.value||!source.value||!episode.value||!data.value)return;
+    const preparationStarted=performance.now();
     const current=serial,selected=episode.value,recording=source.value,timings=data.value.timings;
     abort=new AbortController();const signal=abort.signal;
     const sensors=selected.media.filter(m=>m.kind==='tactile');
@@ -124,15 +125,22 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
         }else{
         const assets=await loadAssets();signal.throwIfAborted();
         const {worker:_,...payload}=assets;
-        let backend='wasm';
+        let backend='wasm',completedFrames=0,processingStarted=performance.now();
+        const overallFrames=missing.reduce((sum,m)=>sum+m.timing.media.length,0);
         const initialize=async(forceWasm:boolean)=>{
           signal.throwIfAborted();runner?.dispose();
-          const worker=new ForceWorker(assets.worker,signal,p=>{if(current===serial)progress.value=p;});runner=worker;
+          const worker=new ForceWorker(assets.worker,signal,p=>{
+            if(current!==serial)return;
+            const overallFrame=completedFrames+p.frame,elapsed=(performance.now()-preparationStarted)/1000;
+            progress.value={...p,overallFrame,overallFrames,elapsed,backend,
+              ...(p.stage==='calculating'&&overallFrame>0?{remaining:(performance.now()-processingStarted)/1000*(overallFrames-overallFrame)/overallFrame}:{})};
+          });runner=worker;
           const info=await worker.request('init',{assets:payload,decoder:await forceDecoderResources(),forceWasm});backend=info.backend;return worker;
         };
         const forceWasm=new URLSearchParams(location.search).has('forceWasm');
         let worker:ForceWorker;
         try{worker=await initialize(forceWasm);}catch(error){signal.throwIfAborted();if(forceWasm)throw error;worker=await initialize(true);}
+        processingStarted=performance.now();
         for(const {media,blob,sha} of missing){
           signal.throwIfAborted();
           try{
@@ -147,6 +155,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
             cache.put(track);result[media.id]=track;
             playbackMark('force-track-complete',media.id,{frames:track.time.length,seconds:response.seconds,backend:response.backend});
           }catch(error){signal.throwIfAborted();failures[media.id]='forceCalculationFailed';console.warn('Force preparation:',media.id,error);}
+          completedFrames+=timings[media.id].media.length;
         }
         }
       }

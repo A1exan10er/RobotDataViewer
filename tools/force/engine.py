@@ -152,12 +152,15 @@ class Engine:
                             if key in memo:memo.move_to_end(key)
                     else:
                         start=time.perf_counter()
-                        try:prediction,score=self.session.run(None,{'input':x})
+                        def predict():
+                            prediction,score=self.session.run(None,{'input':x})
+                            if not np.isfinite(prediction).all() or not np.isfinite(score).all():raise ValueError('Nonfinite inference output')
+                            return prediction,score
+                        try:prediction,score=predict()
                         except Exception as error:
                             if self.backend=='CPUExecutionProvider':raise
                             self.fallback.append(f'{self.backend} failed during inference: {error}')
-                            self._session('CPUExecutionProvider');prediction,score=self.session.run(None,{'input':x})
-                        if not np.isfinite(prediction).all() or not np.isfinite(score).all():raise ValueError('Nonfinite inference output')
+                            self._session('CPUExecutionProvider');prediction,score=predict()
                         s,fz=forces(prediction[0],float(score));stats['inference']+=time.perf_counter()-start
                         with memo_lock:
                             memo[key]=(s,fz)

@@ -1100,8 +1100,91 @@ found an unread POST body causing HTTP 501 on connection reuse; fixed with a
 persistent-connection regression. The first sandboxed Python run could not create
 loopback sockets; the subsequent run with socket access passed.
 
-Current completed checks: 13 Node test files; 17 Python tests; native engine
+Current completed checks: 104 tests across 13 Node test files; 18 Python tests; native engine
 regressions; production build; Linux extracted-package calculation and restart.
-Windows, macOS Intel/ARM, DirectML/CoreML, and the NVIDIA packaged runtime remain
-pending at this point. Earlier unfinished/stalled checks above remain failures
+Windows, macOS Intel/ARM, DirectML/CoreML and Windows NVIDIA remain pending.
+Linux NVIDIA package results are recorded below. Earlier unfinished/stalled checks above remain failures
 or incomplete checks; they have not been relabeled as passing.
+
+Additional completed 1.4.0 package/UI checks:
+
+- Extracted launcher in Firefox 156: native/software/compatibility joint startup
+  **767 / 726 / 704 ms**. Cold native force preparation **5.652 s**; subsequent
+  fresh-browser disk reuse **66 / 76 ms**, memory reuse **10–13 ms**. Four seconds
+  of fixture playback advanced the shared clock 4.001 s and painted 32 tactile
+  updates; three-second software/compatibility runs painted 20 updates each.
+  All expected panels, current generation, force source timestamps, seeks,
+  offsets, worker cleanup and expanded Chinese/normal English checks passed.
+  No browser force-runtime bundle was loaded on these native paths.
+- Chromium in-app browser: native cache results on all four panels, paused
+  completion, playback, stepping, normal/expanded views, localization, deletion
+  without recalculation, and cancellation passed; no console warnings/errors.
+  Some automated mouse clicks did not activate controls in this browser surface;
+  keyboard interactions were used. No precise Chromium startup timing was taken.
+- Actual extracted add-on, forced CUDA, warm libraries: 48 frames in **3.792 s**
+  preparation round trip, **4.467 s** including launcher/test setup. Backend
+  confirmed CUDA on all four sensors, eight synthetic provider probes passed
+  (max error 0.000000425 N), initialization **1.796 s**. Peak owned RSS
+  **1,177.9 MiB**, total GPU usage **973 MiB**. Host available RAM 5,233 MiB;
+  swap was effectively full. This is a warm-library run, not the earlier cold
+  GPU result.
+- Portable API cancellation: transfer **0.94 ms**, initialization **16.01 ms**,
+  processing **44.16 ms**. Repeated cancellation stayed terminal, videos were
+  removed, and all owned workers exited. A corrupt sensor and a valid sensor
+  in the same job produced one error and one complete usable track; only the
+  complete track persisted. Clearing the cache did not start another job.
+
+The published branch checkpoint is `0e5906a8ffbe992a81af173c6a9df416d4b4090e` on
+both remotes. A native CI matrix has been added for Windows x64, Linux x64,
+macOS Intel/Apple Silicon and separate Windows/Linux NVIDIA packages. The
+private GitHub build results/artifacts cannot yet be retrieved on this host:
+SSH push works, but GitHub CLI is not authenticated. Windows/macOS package,
+DirectML/CoreML and Windows NVIDIA checks remain **unverified**, not passed.
+
+- Warm full episode through the **extracted NVIDIA package**: **69.100 s**
+  authenticated preparation, **70.317 s** including launcher/test setup,
+  initialization **1.944 s**, all 2,432 frames on CUDA. Peak owned RSS
+  **1,196.4 MiB**, total GPU **719 MiB**. Host available RAM 4,175 MiB, swap
+  used 8,038 MiB. Different host pressure/preprocessing throughput explains why
+  this warm total is not simply the cold run minus its initialization time.
+- Restarting that extracted package reused all four complete tracks (118,748
+  bytes), lookup **7.281 ms**, without inference.
+
+Final hardening checks (29 September, same host):
+
+- The serial `npm test`, `npm run test:python`, and `npm run build` run passed,
+  with no skipped JavaScript or Python tests. The added cancellation regression
+  covers a worker disappearing between process polling and child enumeration.
+- Rebuilt/extracted Linux base, empty result cache: 48-frame preparation **3.796 s**;
+  restarted cache lookup **1.654 ms**, four complete tracks. This is a fresh
+  result cache with warm operating-system libraries, not a machine reboot.
+- Rebuilt/extracted NVIDIA add-on: forced CUDA preparation **3.886 s**, including
+  initialization and all provider probes. No GPU result is claimed for Windows.
+- Upload/initialization/processing cancellation took **4.23 / 12.94 / 22.95 ms**.
+  Killing the test launcher left no inference worker or temporary video behind;
+  restarting removed its abandoned launch directory. A corrupt sensor remained
+  isolated. Cache deletion started no additional jobs.
+- Browser requests now have bounded deadlines and remain usable when session
+  storage is disabled. Source archives include tests, build scripts and guides.
+  ZIP checksums are streamed; an earlier packaging attempt was intentionally
+  interrupted to avoid reading the multi-gigabyte add-on into memory.
+- Final Firefox 156 HTML fallback: joint startup **0.923 s**, every-frame browser
+  calculation **61.442 s**, memory reuse **13.89 ms**, and 20 tactile paints over
+  three seconds. The native 3.796 s preparation round trip is **16.2×** faster
+  than this browser calculation; the earlier complete launcher/test comparison
+  remains 11.9×. Available RAM before browser launch was 4,928 MiB, swap full.
+- Final Firefox 156 episode 0157: joint startup **1.479 s**, imported prepared
+  force tracks ready **91.93 ms**, memory reuse **8.28 ms**. Five seconds of
+  playback advanced the clock 4.983 s with **588 tactile paints**. All four force
+  panels used displayed-frame timestamps; seeks/offsets and worker cleanup passed.
+  Normal English and expanded Chinese screenshots were inspected. Available RAM
+  before launch was 3,541 MiB; 8,183 MiB of swap was used. Neither native nor
+  prepared-track paths loaded the browser inference bundle.
+
+Linux delivery sizes (rounded): base **294.8 MiB**, separate NVIDIA add-on
+**2,879.3 MiB**, HTML-only **91.7 MiB**. All include source/notices; no original
+recordings, original model ZIP, older model, or Python bytecode caches are included
+in the application source archive. PyInstaller's compiled runtime is intentional.
+Only Linux packages have been built and extracted on this host. Windows x64,
+macOS Intel/Apple Silicon and Windows NVIDIA delivery remain incomplete pending
+authenticated access to the private platform CI builds and successful smoke tests.

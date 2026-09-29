@@ -123,7 +123,7 @@ const issueLabel=(code:string):Word=>code==='estimated_alignment'?'estimated':co
               <template v-if="force.native">
                 <button v-if="force.diagnostics.value" class="button secondary small" @click="force.exportDiagnostics()">{{ t('forceDiagnostics') }}</button>
                 <button v-if="force.enabled.value && !force.preparing.value && Object.keys(force.errors.value).length" class="button secondary small" @click="force.retryBrowser()">{{ t('forceBrowserFallback') }}</button>
-                <small v-if="force.storage.value">{{ t('forceStorage') }}: {{ (force.storage.value.bytes/1048576).toFixed(1) }} / 256 MiB</small>
+                <small v-if="force.storage.value">{{ t('forceStorage') }}: {{ force.storage.value.bytes<1048576 ? (force.storage.value.bytes/1024).toFixed(1)+' KiB' : (force.storage.value.bytes/1048576).toFixed(1)+' MiB' }} / 256 MiB</small>
                 <button class="button secondary small" :disabled="force.preparing.value" @click="force.removeSaved()">{{ t('forceRemoveEpisode') }}</button>
                 <button class="button secondary small" :disabled="force.preparing.value" @click="force.removeSaved(true)">{{ t('forceClearAll') }}</button>
               </template>

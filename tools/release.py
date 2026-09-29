@@ -38,10 +38,10 @@ when distributing it. See QUICKSTART_EN.md for controls and display information.
 '''
 # Supply app source and library build inputs so recipients can replace/relink the decoder.
 with tarfile.open(root / 'sources' / 'RobotDataViewer-source.tar.gz', 'w:gz') as source:
-    for name in ('src', 'vendor', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.ts', 'THIRD_PARTY_NOTICES.md'):
+    for name in ('src', 'vendor', 'docs', 'tests', 'README.md', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.ts', 'THIRD_PARTY_NOTICES.md'):
         path = root / name
-        source.add(path, arcname=f'RobotDataViewer/{name}', filter=lambda info: None if info.name.endswith(('decoder-worker.js', 'decoder.wasm.b64', 'force.onnx', 'deepflow.wasm')) else info)
-    for name in ('build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
+        source.add(path, arcname=f'RobotDataViewer/{name}', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith(('.pyc', '.pyo', 'decoder-worker.js', 'decoder.wasm.b64', 'force.onnx', 'deepflow.wasm')) else info)
+    for name in ('release.py', 'package_samples.py', 'browser-force-firefox.py', 'build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
         source.add(root / 'tools' / name, arcname=f'RobotDataViewer/tools/{name}')
     source.add(root / 'tools' / 'reference', arcname='RobotDataViewer/tools/reference', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith('.zip') else info)
     source.add(root / 'tools' / 'native', arcname='RobotDataViewer/tools/native', filter=lambda info: None if '__pycache__' in info.name else info)

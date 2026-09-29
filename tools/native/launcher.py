@@ -41,7 +41,9 @@ class Application:
         # Only our marked abandoned launch directories. Never scan user recordings.
         for p in self.work.glob('launch-*'):
             try:
-                pid=int((p/'owner').read_text());os.kill(pid,0)
+                import psutil
+                pid=int((p/'owner').read_text())
+                if not psutil.pid_exists(pid):raise ProcessLookupError
             except ProcessLookupError:shutil.rmtree(p,ignore_errors=True)
             except (ValueError,FileNotFoundError):
                 if time.time()-p.stat().st_mtime>86400:shutil.rmtree(p,ignore_errors=True)
@@ -77,12 +79,12 @@ class Application:
         with job['lock']:
             job['cancelled']=True;process=job['process']
             if process and process.poll() is None:
+                import psutil
                 try:
-                    import psutil
                     for child in psutil.Process(process.pid).children(recursive=True):
                         try:child.terminate()
                         except psutil.Error:pass
-                except ImportError:pass
+                except psutil.Error:pass  # The worker may exit between poll and enumeration.
                 process.terminate()
         if process:
             try:process.wait(timeout=3)
@@ -98,7 +100,7 @@ class Application:
             if not FROZEN:args.append(str(HERE/'launcher.py'))
             args+=['--worker',str(job['directory']),'--model',str(self.model),'--provider',self.provider]
             with (job['directory']/'error.log').open('wb') as error_log:
-                job['process']=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=error_log,text=True)
+                job['process']=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=error_log,text=True,env={**os.environ,'RDV_FORCE_PARENT_PID':str(os.getpid())})
             job['state']='calculating'
         threading.Thread(target=self.monitor,args=(job,),daemon=True).start()
     def watchdog(self,job):

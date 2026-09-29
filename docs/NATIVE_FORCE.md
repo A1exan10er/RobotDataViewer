@@ -24,6 +24,9 @@ Cache locations:
 - Windows: `%LOCALAPPDATA%/RobotDataViewer/force-v1`.
 - macOS: `~/Library/Caches/RobotDataViewer/force-v1`.
 
+Use **Save preparation diagnostics** after calculation to save backend and timing details.
+If the helper fails, **Retry with browser calculation** retains the slower HTML fallback.
+
 The helper accepts only authenticated, same-origin loopback requests. Its launch
 token stays in the browser session. It exposes no file-path read/write API.
 Videos are uploaded in 4 MiB chunks, written incrementally, and checksum checked.
@@ -41,7 +44,8 @@ estimates, including the model's **nonzero** reference-frame estimate.
 CPU and each candidate GPU provider run all eight bundled synthetic probes.
 Original decoded-recording oracles are validated separately and are never packaged.
 Candidates must retain contact decisions and meet `0.001 N + 0.1%` force tolerance,
-and be faster than CPU. Otherwise CPU is selected with a diagnostic reason.
+and be faster than CPU. Jobs whose measured CPU estimate is below five seconds
+avoid GPU startup overhead. Otherwise CPU is selected with a diagnostic reason.
 Windows uses DirectML; macOS can use CoreML; Linux/Windows can use the separate
 NVIDIA add-on. CUDA TF32 and CoreML low-precision accumulation are disabled.
 Install the matching NVIDIA add-on as `nvidia/` beside the base executable.
@@ -55,7 +59,7 @@ unchanged supplied PyTorch model, separately from provider validation.
 
 `tools/native/benchmark.py` measures cold wall time and owned process-tree RSS.
 Engine diagnostics separately report initialization, decode, preprocessing,
-inference, upload time, backend, fallback reasons and provider checks. Summed
+inference (including runtime-managed device copies), upload time, backend, fallback reasons and provider checks. Summed
 preprocessing CPU task durations overlap inference and are not wall-clock totals.
 Physical sensor accuracy still requires measured-force calibration data.
 
@@ -78,6 +82,11 @@ python tools/native/build-ffmpeg.py
 python tools/native/build.py
 ```
 
+If rebuilding from the package's source archive, first restore binary build
+inputs with `python tools/force/unpack-runtime.py /path/to/force-runtime.js`.
+Decoder build inputs are supplied under `sources/`; follow `vendor/BUILD.md`
+for rebuilding that component.
+
 FFmpeg is built from the already supplied `sources/ffmpeg-8.1.tar.xz`, with only
 local input and the required native video decoders; no GPL or external codec
 libraries are enabled. Linux/macOS need make and a C compiler **only on the build
@@ -86,8 +95,9 @@ configure flags/checksum, dependency versions, notices and application source.
 To rebuild the model, use the force export instructions in `vendor/BUILD.md`;
 PyTorch and the original model archive are build inputs, not portable runtimes.
 
-NVIDIA build: use a separate environment containing `onnxruntime-gpu==1.23.2`
-instead of CPU/DirectML ORT, plus matching CUDA 12/cuDNN 9 runtime packages. Run
+NVIDIA build: create a separate environment and install
+`tools/native/requirements-nvidia.txt` instead of the CPU/DirectML requirements.
+This pins the tested CUDA 12/cuDNN 9 runtime packages as well as ORT. Run
 `python tools/native/build.py --nvidia` on Windows/Linux x64. Never mix ORT wheels
 in the same environment. GPU packages are large; they are intentionally separate.
 See `docs/VALIDATION.md` for actual tested platforms, measurements and limitations.
