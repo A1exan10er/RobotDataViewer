@@ -16,6 +16,10 @@ start = f'''Robot Data Viewer {version} — Portable / 便携版
 1. Extract this ZIP completely, then open viewer.html in Firefox, Chrome or Edge.
 2. Choose Open folder or Open TAR and select your original recordings.
 3. Select an episode and press Play once. RGB and tactile start together when ready.
+4. For USB camera inspection, choose Live cameras, Start all, and allow camera access.
+   Assign wrist/environment (640x480/30 Hz) or tactile (640x360/30 Hz) profiles.
+   Remove contact before clicking Calibrate for each tactile response map.
+   See LIVE_CAMERAS.md for camera permissions, controls and validation status.
 
 No installation, server, Python, external codecs or internet connection is required.
 Optional force calculation requires the included force-runtime.js beside viewer.html.
@@ -29,6 +33,9 @@ when distributing it. See QUICKSTART_EN.md for controls and display information.
 1. 请先完整解压 ZIP，再用 Firefox、Chrome 或 Edge 打开 viewer.html。
 2. 点击“打开文件夹”或“打开 TAR”，选择原始录制数据。
 3. 选择片段后点击一次播放，准备完成后 RGB 和触觉将同步开始。
+4. 检查 USB 相机时，选择“实时相机”并点击“全部启动”，允许相机权限。
+   选择腕部/环境或触觉类型；移除接触后点击“标定”以查看触觉响应。
+   详情及验证状态见 LIVE_CAMERAS.md。
 
 无需安装、服务器、Python、外部解码器或网络。数据仅在本地读取，不会修改或上传。
 可选力估算需要将 force-runtime.js 与 viewer.html 放在一起；也可直接导入已准备的
@@ -41,7 +48,7 @@ with tarfile.open(root / 'sources' / 'RobotDataViewer-source.tar.gz', 'w:gz') as
     for name in ('src', 'vendor', 'docs', 'tests', 'README.md', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.ts', 'THIRD_PARTY_NOTICES.md'):
         path = root / name
         source.add(path, arcname=f'RobotDataViewer/{name}', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith(('.pyc', '.pyo', 'decoder-worker.js', 'decoder.wasm.b64', 'force.onnx', 'deepflow.wasm')) else info)
-    for name in ('release.py', 'package_samples.py', 'browser-force-firefox.py', 'build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
+    for name in ('release.py', 'package_samples.py', 'browser-force-firefox.py', 'live-camera-fixture.mjs', 'browser-live-cameras.mjs', 'browser-camera-hardware.mjs', 'build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
         source.add(root / 'tools' / name, arcname=f'RobotDataViewer/tools/{name}')
     source.add(root / 'tools' / 'reference', arcname='RobotDataViewer/tools/reference', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith('.zip') else info)
     source.add(root / 'tools' / 'native', arcname='RobotDataViewer/tools/native', filter=lambda info: None if '__pycache__' in info.name else info)
@@ -54,7 +61,7 @@ with ZipFile(output, 'w', compression=ZIP_DEFLATED) as archive:
     for notice in sorted((root/'vendor/force/licenses').glob('*.txt')):
         archive.write(notice, 'RobotDataViewer/vendor/force/licenses/'+notice.name)
     archive.write(root / 'THIRD_PARTY_NOTICES.md', 'RobotDataViewer/THIRD_PARTY_NOTICES.md')
-    for doc in ('QUICKSTART_EN.md', 'QUICKSTART_ZH.md', 'FORMAT.md', 'NATIVE_FORCE.md'):
+    for doc in ('QUICKSTART_EN.md', 'QUICKSTART_ZH.md', 'FORMAT.md', 'NATIVE_FORCE.md', 'LIVE_CAMERAS.md'):
         archive.write(root / 'docs' / doc, f'RobotDataViewer/{doc}')
     archive.write(root / 'vendor' / 'BUILD.md', 'RobotDataViewer/vendor/BUILD.md')
     archive.write(root / 'vendor' / 'SHA256.json', 'RobotDataViewer/vendor/SHA256.json')

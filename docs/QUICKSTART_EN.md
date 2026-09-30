@@ -57,3 +57,12 @@ or all saved force results. Removal switches force off without recalculating.
 Preparation shows elapsed time, overall frame progress and an estimated remaining
 time. It still processes every frame and ends paused. Optional NVIDIA libraries
 are supplied separately; see NATIVE_FORCE.md for installation and limitations.
+
+## Live USB camera inspection
+
+Choose **Live cameras → Start all** and allow camera access. Assign each device
+as wrist/environment (640×480, 30 Hz) or tactile (640×360, 30 Hz). Raw images
+remain visible; remove contact and click **Calibrate** for tactile response.
+Stop all disables automatic preview of newly connected cameras. See
+[LIVE_CAMERAS.md](LIVE_CAMERAS.md) for controls, permissions, and release-candidate
+validation limits.

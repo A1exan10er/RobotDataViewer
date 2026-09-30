@@ -57,7 +57,7 @@ def wait(expression, timeout=35):
     while time.monotonic()<deadline:
         if evaluate('return '+expression):return
         time.sleep(.05)
-    raise RuntimeError('Readiness timed out: '+evaluate('return document.body.innerText'))
+    raise RuntimeError('Readiness timed out: '+evaluate('return JSON.stringify([...document.querySelectorAll(".media-card")].map(c=>({...c.dataset})))')+'\n'+evaluate('return document.body.innerText'))
 
 def open_source():
     selector='input[webkitdirectory]' if source.is_dir() else 'input[accept]'

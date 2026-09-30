@@ -1,6 +1,6 @@
 {
   "name": "robot-data-viewer",
-  "version": "1.4.0",
+  "version": "1.5.0-rc.1",
   "private": true,
   "type": "module",
   "description": "An independent, offline viewer for recorded robot and UMI samples.",
@@ -10,7 +10,8 @@
     "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
     "test:python": "python3 -m unittest discover -s tests -p 'test_*.py' -v",
     "prebuild": "node tools/prepare-decoder.mjs && node tools/force/build-assets.mjs",
-    "predev": "node tools/prepare-decoder.mjs && node tools/force/build-assets.mjs"
+    "predev": "node tools/prepare-decoder.mjs && node tools/force/build-assets.mjs",
+    "test:live": "node tools/live-camera-fixture.mjs && node tools/browser-live-cameras.mjs"
   },
   "dependencies": {
     "@noble/hashes": "2.0.1",

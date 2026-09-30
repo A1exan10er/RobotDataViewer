@@ -1466,3 +1466,64 @@ small {
 .play-button:disabled { opacity:.6; cursor:wait; }
 .force-readout { position:relative; }.force-scale { position:absolute; top:38px; left:18px; color:#8b98a8; font-size:9px; }.force-readout svg path { vector-effect:non-scaling-stroke; }
 .force-values { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; }.force-values>span { grid-column:1 / -1; }.expanded-panel .force-values { display:flex; }.force-chart { position:relative; }.force-chart .force-scale { top:4px; left:8px; }
+
+/* Live capture is independent of the recording timeline and sidebar. */
+.recording-mode { display:contents }
+.mode-switch { display:flex; gap:3px; padding:4px; border:1px solid var(--line); border-radius:9px; background:#0c1118; flex-shrink:0 }
+.mode-switch button { padding:8px 13px; border-radius:5px; color:#8e9daf; font-size:12px; white-space:nowrap }
+.mode-switch button.selected { color:#dbebff; background:#26364b }
+.live-workspace { max-width:1920px; padding:34px 32px 24px; margin:auto }
+.live-heading { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:26px }
+.live-heading .eyebrow { display:flex; align-items:center; gap:8px; color:#83c9b7; font-size:11px; margin-bottom:12px }
+.live-heading h1 { font-size:30px; font-weight:550; letter-spacing:-1px }
+.live-heading p { color:#94a2b3; margin-top:10px; line-height:1.6; max-width:740px }
+.live-actions { display:flex; flex-wrap:wrap; gap:8px }
+.live-summary { display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:12px; color:#8b9aad; padding:15px 0; border-top:1px solid var(--line); margin-bottom:10px }
+.live-summary span { display:flex; align-items:center; gap:8px }
+.live-summary i { width:6px; height:6px; background:#6b7788; border-radius:50% }
+.live-summary i.running { background:#84d1bc; box-shadow:0 0 9px #84d1bc40 }
+.live-empty { display:flex; min-height:430px; justify-content:center; align-items:center; flex-direction:column; gap:18px; text-align:center; border:1px dashed #334052; border-radius:14px; background:radial-gradient(ellipse at center,#192632 0%,#121920 70%); padding:40px; color:#99acc2 }
+.live-empty h2 { color:#e1eaf5; font-size:22px }
+.live-empty p { max-width:570px; line-height:1.8 }
+.live-profile-hints { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-top:16px; font-size:11px; color:#7e93a9 }
+.live-profile-hints span { padding:9px 12px; border:1px solid #344154; border-radius:6px }
+.live-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:start }
+.live-grid.one-camera { grid-template-columns:minmax(0,1fr); max-width:1200px; margin:auto }
+.live-card { min-width:0; border:1px solid #2f3b4b; border-radius:12px; background:#151c25; overflow:hidden; box-shadow:0 8px 28px #00000012 }
+.live-card-header { display:flex; justify-content:space-between; gap:12px; padding:15px 16px 12px; align-items:center }
+.live-camera-title { display:flex; align-items:center; gap:12px; min-width:0 }
+.live-camera-title>div { min-width:0 }
+.live-camera-title h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px }
+.live-index { border:1px solid #364457; border-radius:6px; color:#9fb2c9; font-size:12px; padding:9px; font-variant-numeric:tabular-nums }
+.live-status { display:inline-block; margin-top:5px; font-size:10px; color:#8b9aad }
+.live-status.streaming { color:#85cbb7 }
+.live-status.error,.live-status.disconnected { color:#e2b58b }
+.live-card-controls { display:flex; gap:10px; padding:0 16px 13px }
+.live-card-controls select { min-width:0; flex:1; padding:7px 10px; border:1px solid #364152; border-radius:6px; background:#111820; color:#b9c9db; font-size:11px }
+.live-images { display:grid; grid-template-columns:minmax(0,1fr); gap:1px; background:#2a3542 }
+.live-images.with-response { grid-template-columns:repeat(2,minmax(0,1fr)) }
+.live-image { position:relative; min-width:0; background:#080c11; display:flex; flex-direction:column; justify-content:center }
+.live-image video,.live-image canvas { width:100%; height:auto; display:block; object-fit:contain; max-height:450px; background:#080c11 }
+.live-image-label { position:absolute; left:9px; top:9px; z-index:1; padding:4px 7px; border:1px solid #64708045; background:#101720d9; border-radius:4px; font-size:10px; color:#c2cedc }
+.live-image-overlay { position:absolute; inset:0; background:#0a1019d9; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:32px 20px 16px; text-align:center; color:#9dacc0; font-size:12px; line-height:1.6 }
+.live-stale-overlay { position:absolute; bottom:10px; left:10px; right:10px; border:1px solid #ab805b; color:#f3d0a7; background:#352419ee; border-radius:4px; padding:8px; display:flex; align-items:center; gap:8px; font-size:11px }
+.live-metrics { display:flex; flex-wrap:wrap; gap:12px 20px; padding:12px 16px; color:#8697aa; font-size:10px; font-variant-numeric:tabular-nums }
+.live-metrics span { display:flex; flex-direction:column; gap:5px }
+.live-metrics strong { color:#c8d7e8; font-size:11px; font-weight:450 }
+.live-calibration { padding:13px 16px; border-top:1px solid #2a3542 }
+.live-calibration>p { font-size:11px; line-height:1.7; color:#96a8bc; margin-bottom:10px }
+.live-response-controls { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:11px; color:#c1cede }
+.live-response-controls label { display:flex; align-items:center; gap:7px }
+.live-response-controls input[type=range] { width:70px; accent-color:#8ab9f1 }
+.live-response-controls input[type=checkbox] { accent-color:#8ab9f1 }
+.live-response-footer { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:12px; font-size:10px; color:#768aa1 }
+.live-card-warning,.live-error { color:#e6bd91; background:#33291d66; display:flex; align-items:center; gap:8px; line-height:1.6; padding:10px 16px; font-size:12px }
+.live-error { border:1px solid #685340; border-radius:8px; margin-bottom:16px }
+.live-notice { padding:12px 0; color:#b1c9e9; font-size:13px }
+.live-footnote { margin:20px 0 0; max-width:1100px; color:#778b9f; font-size:11px; line-height:1.7 }
+.live-card.expanded { position:fixed; inset:20px; z-index:110; overflow:auto; box-shadow:0 0 0 100vmax #070b12ed; max-width:1600px; margin:auto }
+.live-card.expanded .live-image video,.live-card.expanded .live-image canvas { max-height:calc(100dvh - 320px); min-height:180px }
+@media(min-width:1600px) { .live-grid { grid-template-columns:repeat(3,minmax(0,1fr)) } }
+@media(max-width:1150px) { .offline-label { display:none } .live-heading { align-items:flex-start; flex-direction:column } .app-header { gap:12px; padding:0 20px } .header-actions { gap:8px } }
+@media(max-width:760px) { .app-header { height:auto; min-height:76px; flex-wrap:wrap; padding:14px 16px } .mode-switch { order:3; width:100% } .mode-switch button { flex:1 } .live-workspace { padding:24px 16px } .live-grid { grid-template-columns:minmax(0,1fr) } .live-heading h1 { font-size:27px } .live-empty { min-height:350px; padding:25px } .live-card.expanded { inset:8px } }
+@media(max-width:440px) { .live-images.with-response { grid-template-columns:minmax(0,1fr) } .live-image video,.live-image canvas { max-height:270px } .live-actions .button { padding:10px; font-size:11px } }

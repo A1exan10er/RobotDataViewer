@@ -1188,3 +1188,60 @@ in the application source archive. PyInstaller's compiled runtime is intentional
 Only Linux packages have been built and extracted on this host. Windows x64,
 macOS Intel/Apple Silicon and Windows NVIDIA delivery remain incomplete pending
 authenticated access to the private platform CI builds and successful smoke tests.
+
+
+## Live cameras 1.5.0-rc.1 — 30 September 2026
+
+The feature branch starts at the unchanged 1.4.0 commit
+`8a4a943afcb83e49494d4228be40ce3f15453e39`. Stable 1.4.0 is tagged on both
+remotes and has matching portable ZIP/checksum releases. Its ZIP SHA-256 is
+`037c6abc1cec6ff5cf0f6e6da3d736013b79799ccff6faece196ebe8e15149b1`.
+
+- Node: **119 individual tests passed**, including discovery, identical names,
+  identity-based role memory, exact profiles, busy/default-device isolation,
+  permission denial, hot plug, explicit stops, overlapping enumeration, late
+  stream cleanup, health thresholds, two calibration slots, 60 distinct frames,
+  cancellation, timeout, missing region, overload, and obsolete worker replies.
+- Python: **18 tests passed**. Production type check and build passed. Existing
+  tactile-filter numerical goldens and force-estimation checks passed unchanged.
+- Isolated Linux Chrome 154: **one, four, eight simulated cameras** passed; eight
+  raw streams plus four real worker heatmaps delivered approximately 29–30 FPS.
+  Contact response, missing-region recovery with continuous raw video, two
+  calibration slots, staleness warnings, refresh without reset, reconnect,
+  unsupported profiles, permission retry, mode cleanup, and role persistence
+  passed. Expanded views, English/Chinese, and widths 390/900/1600 were checked.
+  Recorded RGB/tactile playback paused on entering live mode and retained its
+  source, selected episode, and timeline position on return. No uncaught
+  browser exceptions or nonlocal network requests occurred.
+- **Physical Linux Chrome 154, one USB/UVC tactile sensor:** advertised and
+  negotiated 640×360/30 Hz and 640×480/30 Hz, with `resizeMode: none`. Manual
+  calibration detected the sensing region. The operator pressed and released
+  contact twice: the response rose from zero to 61,959 colored pixels and
+  returned to zero, with raw preview continuing. Operator unplug/replug showed
+  disconnection, automatically resumed the same camera, invalidated the old
+  reference, and allowed successful recalibration. Sustained one-minute preview
+  delivered roughly 27–28 displayed FPS, with a current heatmap and no stream
+  warning. Expanded raw/response views were inspected. No frames were uploaded.
+
+- Extracted candidate HTML through the existing loopback launcher: real camera
+  capture, calibration, one-minute preview, both profiles, and mode cleanup passed.
+  With the existing portable native runtime, Firefox loaded all seven recorded
+  panels in **698 ms**, prepared force in **5.176 s**, advanced the timeline
+  **4.000 s** with **32 tactile paints**, and reused force results in **9 ms**.
+  Normal English / expanded Chinese, seeking, timestamps, and worker cleanup
+  passed. System Python lacks ONNX Runtime; the packaged runtime was used for
+  inference. The camera feature adds no server endpoints.
+
+Reproduce simulation with `npm run build && npm run test:live`; set
+`ROBOT_VIEWER_RECORDING` to an existing recording TAR for the optional playback
+retention check. The separate `tools/browser-camera-hardware.mjs --hardware`
+script requires operator authorization and uses real cameras; `--operator` adds
+manual contact/replug checks. Diagnostic screenshots/reports remain ignored in
+`artifacts/` and are excluded from packages.
+
+**Remaining release gate:** Windows Chrome/Edge physical acceptance, a real mixed
+eight-camera setup and USB topology, and longer sustained runs. Direct local-file
+permission behavior has not been accepted across target platforms. The extracted
+HTML can be tested through the existing localhost launcher. Synthetic streams do
+not establish hardware quality, and one tested sensor is not eight-camera
+acceptance. Keep this as a release candidate and retain stable 1.4.0.

@@ -1,0 +1,54 @@
+// Opt-in physical-camera acceptance. Uses a fresh, owned Chrome and local video only.
+// Run only with operator permission: node tools/browser-camera-hardware.mjs --hardware
+if (!process.argv.includes("--hardware")) throw new Error("Pass --hardware to allow local camera capture.");
+import { createInterface } from 'node:readline';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import assert from 'node:assert/strict';
+const root=resolve(import.meta.dirname,'..'),web=resolve(process.env.ROBOT_VIEWER_WEB || join(root,'dist')),output=join(root,'artifacts/live-camera-hardware');await mkdir(output,{recursive:true});
+const server=createServer(async(req,res)=>{const name=req.url==='/'?'viewer.html':req.url.slice(1);if(!['viewer.html','force-runtime.js'].includes(name)){res.writeHead(404).end();return;}try{const data=await readFile(join(web,name));res.setHeader('Content-Type',name.endsWith('.html')?'text/html':name.endsWith('.js')?'text/javascript':'application/octet-stream');res.end(data);}catch{res.writeHead(404).end();}});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=process.env.ROBOT_VIEWER_URL || `http://127.0.0.1:${server.address().port}/`;
+const profile=await mkdtemp(join(tmpdir(),'rdv-live-camera-'));
+const executable=process.env.ROBOT_VIEWER_CHROME||(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':'/opt/google/chrome/chrome');
+const chrome=spawn(executable,['--headless=new','--use-fake-ui-for-media-stream','--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--no-first-run','--disable-default-apps','--disable-sync','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows','--disable-background-timer-throttling','--remote-debugging-pipe',`--user-data-dir=${profile}`,'about:blank'],{stdio:['ignore','ignore','pipe','pipe','pipe']});
+let counter=0,buffer='',stderr='',session;const pending=new Map(),errors=[],remote=[];
+chrome.stderr.on('data',b=>stderr+=b.toString());chrome.stdio[4].on('data',chunk=>{buffer+=chunk.toString();let end;while((end=buffer.indexOf('\0'))>=0){const raw=buffer.slice(0,end);buffer=buffer.slice(end+1);if(!raw)continue;const message=JSON.parse(raw);if(message.id){const p=pending.get(message.id);if(p){clearTimeout(p.timer);pending.delete(message.id);message.error?p.reject(new Error(JSON.stringify(message.error))):p.resolve(message.result);}}else if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails);else if(message.method==='Network.requestWillBeSent'&&/^https?:/.test(message.params.request.url)&&new URL(message.params.request.url).origin!==new URL(url).origin)remote.push(message.params.request.url);}});
+const cdp=(method,params={},browser=false)=>new Promise((resolve,reject)=>{const id=++counter,timer=setTimeout(()=>{pending.delete(id);reject(new Error(`CDP timeout ${method}: ${stderr.slice(-800)}`));},20000);pending.set(id,{resolve,reject,timer});chrome.stdio[3].write(JSON.stringify({id,method,params,...(!browser&&session?{sessionId:session}:{})})+'\0');});
+const evaluate=async expression=>{const result=await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw new Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const wait=async(expression,timeout=20000)=>{const start=Date.now();while(Date.now()-start<timeout){if(await evaluate(expression))return;await delay(100);}throw new Error('Condition timed out: '+expression);};
+const button=label=>evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
+const role=async(index,value)=>evaluate(`{const select=document.querySelectorAll('.live-card select')[${index}];select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));}`);
+const cardButton=(index,label)=>evaluate(`[...document.querySelectorAll('.live-card')[${index}].querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}).click()`);
+const state=()=>evaluate(`({cards:[...document.querySelectorAll('.live-card')].map(c=>({state:c.dataset.status,response:c.dataset.response,time:c.querySelector('video').currentTime,width:c.querySelector('video').videoWidth,height:c.querySelector('video').videoHeight,settings:(()=>{const s=c.querySelector('video').srcObject?.getVideoTracks()[0].getSettings(); if(s){delete s.deviceId;delete s.groupId;}return s;})(),metrics:c.querySelector('.live-metrics')?.textContent,warnings:[...c.querySelectorAll('.live-card-warning')].map(p=>p.textContent),responseNote:c.querySelector('.live-response-footer')?.textContent}))})`);
+const screenshot=async name=>{const image=await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await writeFile(join(output,name+'.png'),Buffer.from(image.data,'base64'));};
+const operator=process.argv.includes('--operator');const input=operator?createInterface({input:process.stdin}):undefined;
+const operatorDone=()=>new Promise(resolve=>input.once('line',resolve));
+const report={checks:[],errors,remote};
+try {
+ report.browser=(await cdp('Browser.getVersion',{},true)).product;
+ const target=await cdp('Target.createTarget',{url:'about:blank'},true); session=(await cdp('Target.attachToTarget',{targetId:target.targetId,flatten:true},true)).sessionId;
+ await cdp('Page.enable');await cdp('Runtime.enable');await cdp('Network.enable');await cdp('Emulation.setDeviceMetricsOverride',{width:1400,height:1000,deviceScaleFactor:1,mobile:false});await cdp('Page.navigate',{url});await wait("!!document.querySelector('.mode-switch')");
+ await button('Live cameras');await button('Start all');await wait("document.querySelectorAll('[data-status=streaming]').length>=1",30000);
+ report.default=await state();console.log('Default capture',JSON.stringify(report.default));await screenshot('raw-default');
+ await role(0,'tactile');await wait("document.querySelector('[data-camera=\"0\"]').dataset.status==='streaming'",30000);await delay(3000);
+ report.tactile=await state();assert.equal(report.tactile.cards[0].width,640);assert.equal(report.tactile.cards[0].height,360);assert.equal(report.tactile.cards[0].settings.frameRate,30);assert.deepEqual(report.tactile.cards[0].warnings,[]);report.checks.push('Physical 640x360/30 Hz capture');console.log('Tactile profile',JSON.stringify(report.tactile));
+ await cardButton(0,'Calibrate');await wait("['ready','region','failed','timeout'].includes(document.querySelector('.live-card').dataset.response)",30000);report.calibration=await state();await screenshot('tactile-calibrated');console.log('Calibration',JSON.stringify(report.calibration));
+ if(operator){
+  assert.equal(report.calibration.cards[0].response,'ready');await delay(1000);let peak=0;report.contact=[];
+  const sample=async()=>{const n=await evaluate(`(()=>{const c=document.querySelector('.live-response canvas'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<p.length;i+=4)if(p[i]+p[i+1]+p[i+2]>30)n++;return n;})()`);report.contact.push(n);if(n>peak){peak=n;await screenshot('physical-contact');}};
+  await sample();console.log('CONTACT_WINDOW_READY: apply contact, release, then acknowledge.');let sampling=false;const clock=setInterval(async()=>{if(sampling)return;sampling=true;try{await sample();}catch{}finally{sampling=false;}},500);await operatorDone();clearInterval(clock);while(sampling)await delay(50);report.contactPeak=peak;console.log('Contact peak pixels',peak);assert.ok(peak>500,'Contact should produce a visible heatmap response');assert.ok(report.contact.at(-1)<peak/2,'Released contact should return toward baseline');report.checks.push('Operator contact produces heatmap response and release returns toward baseline');
+  console.log('UNPLUG_WINDOW_READY: unplug, wait three seconds, then reconnect.');await wait("document.querySelectorAll('[data-status=disconnected]').length>0",180000);report.disconnected=await state();console.log('DISCONNECTION_OBSERVED');await wait("document.querySelectorAll('[data-status=streaming]').length>0",180000);report.reconnected=await state();assert.equal(report.reconnected.cards.find(c=>c.state==='streaming').response,'idle');console.log('RECONNECTION_OBSERVED');report.checks.push('Physical unplug/replug automatically restarts raw capture and invalidates reference');
+  await cardButton(0,'Calibrate');await wait("document.querySelector('.live-card').dataset.response==='ready'",30000);await screenshot('physical-reconnected');
+ }
+ report.samples=[];for(let i=0;i<(operator?3:12);i++){await delay(5000);report.samples.push((await state()).cards[0]);if(i%3===2)console.log('Sustained preview',JSON.stringify(report.samples.at(-1)));}
+ assert.ok(report.samples.at(-1).time>report.samples[0].time+(operator?5:40));assert.ok(report.samples.every(c=>c.state==='streaming'));report.checks.push(operator?'Continued capture after operator checks':'One minute sustained raw preview');
+ await evaluate("document.querySelector('.live-card .icon-button').click()");await wait("!!document.querySelector('.live-card.expanded')");await screenshot('tactile-expanded');await evaluate("document.querySelector('.live-close').click()");
+ await role(0,'scene');await wait("document.querySelector('[data-status=streaming] video')?.videoHeight===480",30000);report.scene=await state();assert.equal(report.scene.cards[0].width,640);assert.equal(report.scene.cards[0].settings.frameRate,30);assert.equal(report.scene.cards[0].response,'idle');report.checks.push('Physical 640x480/30 Hz capture; profile reset invalidates calibration');
+ await button('Recordings');await wait("!document.querySelector('.live-workspace')");await button('Live cameras');await wait("document.querySelectorAll('.live-card').length>=1");assert.equal((await state()).cards.filter(c=>c.state==='streaming').length,0);report.checks.push('Mode exit stops preview; explicit restart required');
+ assert.deepEqual(errors,[]);assert.deepEqual(remote,[]);await writeFile(join(output,'results.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({checks:report.checks,errors:errors.length,remote:remote.length,report:join(output,'results.json')}));
+}catch(error){await screenshot('failure').catch(()=>{});console.log(JSON.stringify(await state().catch(()=>null)));throw error;}
+finally{input?.close();for(const p of pending.values())clearTimeout(p.timer);chrome.kill('SIGTERM');await new Promise(r=>server.close(r));await delay(300);await rm(profile,{recursive:true,force:true}).catch(()=>{});}

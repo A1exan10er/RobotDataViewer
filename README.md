@@ -8,6 +8,15 @@ Open original robot, UMI, and head-camera companion recordings directly. Explore
 
 [English quick start](docs/QUICKSTART_EN.md) · [中文使用指南](docs/QUICKSTART_ZH.md)
 
+## Live cameras (1.5.0 release candidate)
+
+Inspect up to eight USB/UVC cameras before recording: wrist/environment at
+640×480/30 Hz and tactile at 640×360/30 Hz. **Live cameras** provides raw previews,
+stream-health indicators, hot-plug handling, and manually calibrated tactile
+response maps. Camera frames remain local. See [live-camera usage and validation
+limits](docs/LIVE_CAMERAS.md). Physical Windows/Linux acceptance is still required
+before stable 1.5.0; the preserved 1.4.0 release remains available.
+
 ## Supported data
 
 The viewer reads collector `metadata.json`, MP4 videos, camera timestamps, and state CSVs directly from dotted or nested `observation.image` / `observation.state` directories. Folder selection discovers episodes recursively. Plain TAR archives are indexed in memory and their file entries read through Blob slices; nothing is extracted to disk.
@@ -61,6 +70,6 @@ See [format and interfaces](docs/FORMAT.md) and [validation](docs/VALIDATION.md)
 
 ## Independence
 
-This project has its own build and release lifecycle. It does not import or run QualityCheck, use a database, contact a service, control hardware, label episodes, or modify recordings. The 6D/UMI transformation mathematics retain provenance from the company's existing viewer. The tactile display follows the supplied [offline reference](tools/reference/README.md).
+This project has its own build and release lifecycle. It does not import or run QualityCheck, use a database, contact a remote service, label episodes, or modify recordings. Live camera mode requests local browser camera access only. The 6D/UMI transformation mathematics retain provenance from the company's existing viewer. The tactile display follows the supplied [offline reference](tools/reference/README.md).
 
 Native force acceleration in 1.4.0: launch the platform package for full-frame native preparation and a removable 256 MiB saved-result cache. The HTML-only viewer remains available. See [native builds and usage](docs/NATIVE_FORCE.md) and [measured validation](docs/VALIDATION.md).
