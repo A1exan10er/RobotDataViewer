@@ -38,7 +38,7 @@ onBeforeUnmount(() => { clearInterval(refreshTimer); session?.dispose(); window.
     <p v-if="requesting" class="live-notice" role="status">{{ lt('requesting') }}</p>
     <section v-if="!cameras.length" class="live-empty" :inert="!!expanded"><Camera :size="46" :stroke-width="1" /><h2>{{ lt('empty') }}</h2><p>{{ lt('emptyHint') }}</p><div class="live-profile-hints"><span>640 × 480 / 30 Hz · {{ lt('scene').split(' · ')[0] }}</span><span>640 × 360 / 30 Hz · {{ lt('tactile').split(' · ')[0] }}</span></div></section>
     <div v-else class="live-grid" :class="{'one-camera':cameras.length===1}">
-      <LiveCameraCard v-for="(camera,index) in cameras" :key="camera.id" :camera="camera" :index="index" :expanded="expanded===camera.id" :inert="!!expanded && expanded!==camera.id" @role="(role:CameraRole)=>session?.setRole(camera.id,role)" @start="session?.start(camera.id)" @stop="session?.stop(camera.id)" @retry="retry(camera.id)" @expand="expand(camera.id)" @close="close" />
+      <LiveCameraCard v-for="(camera,index) in cameras" :key="camera.id" :camera="camera" :index="index" :expanded="expanded===camera.id" :inert="!!expanded && expanded!==camera.id" @role="(role:CameraRole)=>session?.setRole(camera.id,role)" @name="name=>session?.setName(camera.id,name)" @profile="profile=>session?.setProfile(camera.id,profile)" @start="session?.start(camera.id)" @stop="session?.stop(camera.id)" @retry="retry(camera.id)" @expand="expand(camera.id)" @close="close" />
     </div>
     <p class="live-footnote" :inert="!!expanded">{{ lt('measurementNote') }}</p>
   </main>

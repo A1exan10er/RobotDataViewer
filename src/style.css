@@ -1499,7 +1499,24 @@ small {
 .live-status.streaming { color:#85cbb7 }
 .live-status.error,.live-status.disconnected { color:#e2b58b }
 .live-card-controls { display:flex; gap:10px; padding:0 16px 13px }
-.live-card-controls select { min-width:0; flex:1; padding:7px 10px; border:1px solid #364152; border-radius:6px; background:#111820; color:#b9c9db; font-size:11px }
+.live-header-actions { display:flex; align-items:center; flex-shrink:0; gap:5px }
+.live-device-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#8e9daf; font-size:10px; margin-top:4px }
+.live-role-controls { min-width:0; border:0; padding:0 16px 13px; margin:0 }
+.live-role-controls legend { padding:0; margin-bottom:7px; color:#8e9daf; font-size:11px }
+.live-role-options { display:flex; flex-wrap:wrap; gap:6px }
+.live-role-options label { display:flex; align-items:center; gap:6px; padding:8px; border:1px solid #364152; border-radius:6px; color:#a8bacf; font-size:11px; cursor:pointer }
+.live-role-options label.selected { border-color:#84afe8; color:#e1edff; background:#23354b }
+.live-role-options input { margin:0; accent-color:#a1c5f5; cursor:pointer }
+.live-card-controls { justify-content:space-between; flex-wrap:wrap }
+.live-name-form,.live-settings-form { margin:0 16px 13px; padding:12px; border:1px solid #3b4d65; border-radius:6px; background:#101820; font-size:11px; color:#b4c6db }
+.live-name-form label,.live-setting-fields label { display:flex; flex-direction:column; gap:6px; min-width:0 }
+.live-name-form input,.live-setting-fields input { min-width:0; width:100%; color:#dbeaff; background:#090f16; border:1px solid #52667e; border-radius:4px; padding:8px }
+.live-setting-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:12px }
+.live-form-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px }
+.live-settings-form p { line-height:1.6 }
+.live-field-error { color:#efc292; margin-top:10px }
+.live-requested { padding:0 16px 12px; color:#91a5bd; font-size:11px; line-height:1.6 }
+.live-requested strong { margin-left:8px; color:#c0d2e7; font-weight:500 }
 .live-images { display:grid; grid-template-columns:minmax(0,1fr); gap:1px; background:#2a3542 }
 .live-images.with-response { grid-template-columns:repeat(2,minmax(0,1fr)) }
 .live-image { position:relative; min-width:0; background:#080c11; display:flex; flex-direction:column; justify-content:center }

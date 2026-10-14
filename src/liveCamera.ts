@@ -2,12 +2,13 @@ export type CameraRole = 'unassigned' | 'scene' | 'tactile';
 export type CameraStatus = 'stopped' | 'starting' | 'streaming' | 'disconnected' | 'error';
 export type CameraError = 'permission' | 'busy' | 'missing' | 'profile' | 'unsupported' | 'capture';
 export type CameraProfile = { width: number; height: number; frameRate: number };
+export type CameraPreferences = { name: string; role: CameraRole; customProfile?: CameraProfile };
 export const CAMERA_PROFILES: Record<Exclude<CameraRole, 'unassigned'>, CameraProfile> = {
   scene: { width: 640, height: 480, frameRate: 30 },
   tactile: { width: 640, height: 360, frameRate: 30 },
 };
-export type LiveCamera = {
-  id: string; label: string; role: CameraRole; present: boolean; status: CameraStatus;
+export type LiveCamera = CameraPreferences & {
+  id: string; label: string; present: boolean; status: CameraStatus;
   stream?: MediaStream; settings?: MediaTrackSettings; error?: CameraError; mismatch: boolean; generation: number;
 };
 export interface CaptureAdapter {
@@ -18,6 +19,27 @@ export interface CaptureAdapter {
 }
 export interface RoleStorage { getItem(key: string): string | null; setItem(key: string, value: string): void }
 const ROLE_KEY = 'rdv.live-camera-roles.v1';
+const PREFERENCES_KEY = 'rdv.live-camera-preferences.v2';
+const roles: CameraRole[] = ['unassigned', 'scene', 'tactile'];
+export function validCameraProfile(profile: unknown): profile is CameraProfile {
+  if (!profile || typeof profile !== 'object') return false;
+  const { width, height, frameRate } = profile as CameraProfile;
+  return Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0
+    && Number.isFinite(frameRate) && frameRate >= 1;
+}
+export function requestedProfile(camera: Pick<CameraPreferences, 'role' | 'customProfile'>): CameraProfile | undefined {
+  return camera.customProfile || (camera.role === 'unassigned' ? undefined : CAMERA_PROFILES[camera.role]);
+}
+export function configuredFrameRate(camera: LiveCamera): number {
+  const rate = camera.settings?.frameRate;
+  return rate && Number.isFinite(rate) && rate >= 1 ? rate : requestedProfile(camera)?.frameRate || 30;
+}
+function savedObject(storage: RoleStorage | undefined, key: string): Record<string, unknown> | undefined {
+  try {
+    const saved: unknown = JSON.parse(storage?.getItem(key) || 'null');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) return saved as Record<string, unknown>;
+  } catch { /* Device memory is optional, including in private mode. */ }
+}
 export function cameraError(error: unknown): CameraError {
   const name = (error as { name?: string })?.name;
   return name === 'NotAllowedError' || name === 'SecurityError' ? 'permission'
@@ -46,21 +68,38 @@ export class LiveCameraSession {
   private epoch = 0;
   private enumeration = 0;
   private stopped = new Set<string>();
-  private roles: Record<string, CameraRole> = {};
+  private preferences: Record<string, CameraPreferences> = Object.create(null);
   private listeners = new Map<string, () => void>();
+  private opening = new Map<string, Promise<void>>();
   private unsubscribe: () => void;
   private adapter: CaptureAdapter;
   private changed: () => void;
   private storage?: RoleStorage;
   constructor(adapter: CaptureAdapter, changed: () => void, storage?: RoleStorage) {
     this.adapter = adapter; this.changed = changed; this.storage = storage;
-    try {
-      const saved = JSON.parse(storage?.getItem(ROLE_KEY) || '{}');
-      for (const [id, role] of Object.entries(saved)) if (['scene', 'tactile', 'unassigned'].includes(String(role))) this.roles[id] = role as CameraRole;
-    } catch { /* Device memory is optional, including in file:// and private mode. */ }
+    const saved = savedObject(storage, PREFERENCES_KEY);
+    if (saved) {
+      for (const [id, entry] of Object.entries(saved)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const value = entry as Partial<CameraPreferences>;
+        if (!roles.includes(value.role as CameraRole)) continue;
+        this.preferences[id] = { name: typeof value.name === 'string' ? value.name.trim() : '', role: value.role!,
+          ...(validCameraProfile(value.customProfile) ? { customProfile: { ...value.customProfile } } : {}) };
+      }
+    } else {
+      for (const [id, role] of Object.entries(savedObject(storage, ROLE_KEY) || {})) {
+        if (roles.includes(role as CameraRole)) this.preferences[id] = { name: '', role: role as CameraRole };
+      }
+      this.savePreferences();
+    }
     this.unsubscribe = adapter.subscribe(() => { void this.refresh(); });
   }
   private emit() { if (!this.disposed) this.changed(); }
+  private savePreferences(camera?: LiveCamera) {
+    if (camera) this.preferences[camera.id] = { name: camera.name, role: camera.role,
+      ...(camera.customProfile ? { customProfile: { ...camera.customProfile } } : {}) };
+    try { this.storage?.setItem(PREFERENCES_KEY, JSON.stringify(this.preferences)); } catch { /* Optional persistence. */ }
+  }
   private release(camera: LiveCamera) {
     ++camera.generation;
     this.listeners.get(camera.id)?.(); this.listeners.delete(camera.id);
@@ -78,7 +117,7 @@ export class LiveCameraSession {
         let camera = this.cameras.get(device.deviceId);
         const arrived = !camera?.present;
         if (!camera) {
-          camera = { id: device.deviceId, label: device.label, role: this.roles[device.deviceId] || 'unassigned', present: true, status: 'stopped', mismatch: false, generation: 0 };
+          camera = { id: device.deviceId, label: device.label, ...(this.preferences[device.deviceId] || { name: '', role: 'unassigned' as const }), present: true, status: 'stopped', mismatch: false, generation: 0 };
           this.cameras.set(camera.id, camera);
         } else { camera.present = true; camera.label = device.label || camera.label; if (arrived) camera.status = 'stopped'; }
         if (arrived && this.automatic && !this.requesting && !this.stopped.has(camera.id)) start.push(camera.id);
@@ -126,14 +165,23 @@ export class LiveCameraSession {
     if (explicit) this.stopped.delete(id);
     this.release(camera); const generation = camera.generation;
     camera.status = 'starting'; camera.error = undefined; this.emit();
-    const profile = camera.role === 'unassigned' ? undefined : CAMERA_PROFILES[camera.role];
+    const profile = requestedProfile(camera);
     const video: MediaTrackConstraints & { resizeMode?: { exact: string } } = { deviceId: { exact: id } };
     if (profile) {
       video.width = { exact: profile.width }; video.height = { exact: profile.height }; video.frameRate = { exact: profile.frameRate };
       if (this.adapter.resizeMode) video.resizeMode = { exact: 'none' };
     }
     let stream: MediaStream | undefined;
+    // A cancelled getUserMedia cannot itself be aborted. Wait for its stream to
+    // arrive and be stopped before asking the same physical source for a new
+    // profile, otherwise Chrome may negotiate against the still-opening source.
+    const previous = this.opening.get(id);
+    let finished!: () => void;
+    const opening = new Promise<void>(resolve => { finished = resolve; });
+    this.opening.set(id, opening);
     try {
+      if (previous) await previous;
+      if (this.disposed || generation !== camera.generation || !camera.present) return;
       stream = await this.adapter.open({ video, audio: false });
       if (this.disposed || generation !== camera.generation || !camera.present) { stopStream(stream); return; }
       const track = stream.getVideoTracks()[0];
@@ -153,6 +201,8 @@ export class LiveCameraSession {
     } catch (error) {
       stopStream(stream);
       if (!this.disposed && generation === camera.generation) { camera.status = 'error'; camera.error = cameraError(error); this.emit(); }
+    } finally {
+      finished(); if (this.opening.get(id) === opening) this.opening.delete(id);
     }
   }
   stop(id: string) {
@@ -165,12 +215,28 @@ export class LiveCameraSession {
     this.emit();
   }
   setRole(id: string, role: CameraRole) {
-    const camera = this.cameras.get(id); if (!camera || camera.role === role) return;
+    const camera = this.cameras.get(id);
+    if (!camera || !roles.includes(role) || (camera.role === role && !camera.customProfile)) return;
+    this.configure(camera, role);
+  }
+  setName(id: string, name: string) {
+    const camera = this.cameras.get(id); if (this.disposed || !camera) return;
+    camera.name = name.trim(); this.savePreferences(camera); this.emit();
+  }
+  setProfile(id: string, profile?: CameraProfile): boolean {
+    const camera = this.cameras.get(id);
+    if (this.disposed || !camera || (profile !== undefined && !validCameraProfile(profile))) return false;
+    const previous = camera.customProfile;
+    if (previous?.width === profile?.width && previous?.height === profile?.height && previous?.frameRate === profile?.frameRate) return true;
+    this.configure(camera, camera.role, profile); return true;
+  }
+  private configure(camera: LiveCamera, role: CameraRole, profile?: CameraProfile) {
+    if (this.disposed) return;
     const restart = camera.status === 'starting' || !!camera.stream;
     this.release(camera); camera.role = role; camera.status = camera.present ? 'stopped' : 'disconnected'; camera.error = undefined;
-    this.roles[id] = role;
-    try { this.storage?.setItem(ROLE_KEY, JSON.stringify(this.roles)); } catch { /* Optional persistence. */ }
-    this.emit(); if (restart) void this.start(id, false);
+    camera.customProfile = profile ? { ...profile } : undefined;
+    this.savePreferences(camera);
+    this.emit(); if (restart) void this.start(camera.id, false);
   }
   dispose() { this.stopAll(); this.disposed = true; ++this.enumeration; this.unsubscribe(); }
 }
@@ -189,13 +255,14 @@ export class LiveFrameHealth {
     this.presented = presented; this.lastFrame = now; this.frames.push({ at: now, count }); this.trim(now);
   }
   private trim(now: number) { while (this.frames.length && this.frames[0].at < now - 2000) this.frames.shift(); }
-  read(now: number, visible: boolean): { fps: number | undefined; age: number | undefined; warning: 'hidden' | 'stale' | 'slow' | undefined } {
+  read(now: number, visible: boolean, frameRate = 30): { fps: number | undefined; age: number | undefined; warning: 'hidden' | 'stale' | 'slow' | undefined } {
     if (!visible) { this.reset(now); return { warning: 'hidden' as const, fps: undefined, age: undefined }; }
     this.trim(now);
     const elapsed = Math.min(2000, now - this.started);
     this.fps = elapsed >= 1000 ? this.frames.reduce((total, frame) => total + frame.count, 0) * 1000 / elapsed : undefined;
     const age = this.lastFrame === undefined ? now - this.started : now - this.lastFrame;
-    if (now - this.started >= 3000 && this.fps !== undefined && this.fps < 24) this.lowSince ??= now;
+    const target = Number.isFinite(frameRate) && frameRate >= 1 ? frameRate : 30;
+    if (now - this.started >= 3000 && this.fps !== undefined && this.fps < .8 * target) this.lowSince ??= now;
     else this.lowSince = undefined;
     return { fps: this.fps, age, warning: age >= 2000 ? 'stale' as const : this.lowSince !== undefined && now - this.lowSince >= 5000 ? 'slow' as const : undefined };
   }

@@ -1,5 +1,45 @@
 # Validation
 
+## Portable startup 1.5.0-rc.3 — local candidate, 30 September 2026
+
+The platform build now includes portable Start Viewer entry points and bilingual
+instructions. The Linux shell launcher resolves its own folder and opens a
+terminal when started without one. The Windows command launcher uses its own
+directory; macOS retains the command-file entry point. Runtime dependencies are
+bundled with each platform package, and no per-PC shortcut installation is needed.
+
+Validated on this Linux host:
+
+- All 15 Node test files, 18 Python tests, production typecheck/build and diff checks passed.
+- The actual native ZIP was extracted, moved to a folder containing spaces,
+  Chinese characters and shell metacharacters, and started from a different
+  working directory without the build environment. It served the exact packaged
+  HTML and authenticated native API. A temporary browser handler confirmed that
+  automatic opening receives the full local URL. Missing runtime files produced
+  a clear extraction error; shutdown removed the launch temporary directory.
+- The non-terminal launch path correctly invokes a desktop terminal with the
+  relocated package path. Linux file-manager execution policies differ; the
+  quick starts document **Run as a Program** and executable permissions.
+- A fresh native force calculation completed, then a second process reused the
+  saved track. The smoke test now uses an empty temporary cache to prevent an
+  earlier run from bypassing calculation, and checks the current application
+  version instead of a hard-coded 1.4.0 marker.
+- Isolated Firefox loaded seven recording panels through the packaged start file
+  in 960 ms. Four seconds of playback advanced 4.000 s over 4.043 s wall time with
+  28 tactile paints. Force preparation, displayed-frame alignment, cache reuse,
+  worker cleanup and English/Chinese normal/expanded views passed.
+
+Evidence: `artifacts/native-startup-linux-x64.json`,
+`artifacts/native-smoke-linux-x64-{1,2}.json`, and
+`artifacts/firefox/portable-start-rc3-native.json`.
+
+Windows and macOS launcher execution remains unverified on this host; the native
+CI matrix now checks extracted entry points on their actual operating systems.
+No CI run or publication was triggered. Existing Windows physical camera and mixed
+eight-camera acceptance gates remain in place before a stable 1.5.0 release.
+The previous camera-control acceptance is recorded below; this change affects
+startup and distribution rather than capture/processing behavior.
+
 ## Portable 1.3.0: optional synchronized force estimates
 
 Validated on 2026-09-29. Force remains off initially. Enabling it holds playback,
@@ -1245,3 +1285,67 @@ permission behavior has not been accepted across target platforms. The extracted
 HTML can be tested through the existing localhost launcher. Synthetic streams do
 not establish hardware quality, and one tested sensor is not eight-camera
 acceptance. Keep this as a release candidate and retain stable 1.4.0.
+
+## Camera controls 1.5.0-rc.2 — local candidate, 30 September 2026
+
+The repair adds visible, keyboard-accessible role choices, independent camera
+names and custom capture dimensions/rate. Preferences use browser device identity
+and migrate the previous role-only store. No source, branch, tag or asset from
+this repair has been uploaded. Stable 1.4.0 and the published rc.1 are unchanged.
+
+- Existing Node checks (15 test files), all 18 Python tests, production type check
+  and build pass. New cases cover role migration, malformed/unavailable storage,
+  duplicate device names, independent names/custom profiles, cancelled requests,
+  stopped-device settings, rate-relative health and extended calibration timing.
+- Chrome 154 and Firefox 156 control suites use actual pointer/keyboard input.
+  They cover 1/2/3/4/7/8 simulated cameras; editing during periodic refresh;
+  rename without restarting capture or losing calibration; unsupported-profile
+  recovery; saved preferences after reordered discovery/reload/reconnect;
+  English/Chinese; expanded views; and 390/900/1600-pixel layouts. A 320×180/5 Hz
+  tactile stream collects all 60 frames over approximately twelve seconds and
+  produces a heatmap. Tests do not set form values or dispatch change events to
+  bypass the new control interactions.
+- The existing broader Chrome simulation passes eight simultaneous raw streams,
+  four real worker heatmaps, two calibration slots, contact/region/stale-frame
+  checks, manual stops, permission recovery, resource cleanup and retention of
+  the selected recording/time across mode switches.
+- Physical testing found and fixed a rapid-profile-switch race in Chrome:
+  a new exact request could overlap a cancelled request still opening the same
+  camera and produce an OverconstrainedError. Opens now wait for that device's
+  prior request to settle and release its late stream. Obsolete queued requests
+  are skipped; other devices still open independently. Unit regressions and the
+  physical pointer/keyboard switching test pass with the fix.
+- **Physical Firefox 156, one USB tactile camera:** uncropped 640×480/30 Hz
+  succeeds; uncropped 640×360/30 Hz and 640×480/15 Hz are rejected by this browser's
+  capture backend. Firefox accepts 640×360 only with crop/scale permitted. This
+  is retained as a limitation, not reported as successful native 640×360 capture.
+  Through the visible controls, an explicit 640×480/30 Hz custom setting keeps
+  the Tactile role, calibrates, and survives naming/reload. Operator unplug/replug
+  restored its saved name and settings, cleared the old reference, and allowed
+  recalibration. Six samples during a one-minute preview remained ready with
+  no warnings and roughly 27–28 displayed FPS. The operator reconnect run
+  preceded the subsequent per-device-open sequencing fix; unit and simulation
+  checks cover that final lifecycle change.
+- **Physical Chrome 154:** uncropped 640×360/30 Hz, custom 640×480/30 Hz,
+  rapid pointer/keyboard role changes, renaming with continuous raw capture and
+  retained calibration, settings failure/recovery, persistence and recalibration
+  pass. The final capture sequencing fix was exercised on this camera. A minute
+  of 640×360 preview retained a current heatmap, 27–28 displayed FPS and no warnings.
+- Extracted HTML through the existing localhost/native launcher: Firefox loaded
+  seven recorded panels in **612 ms**, prepared force in **5.226 s**, advanced
+  **3.983 s** during a 4.010-second playback window with **28 tactile paints**, and
+  reused force results in **5.2 ms**. Existing displayed-frame values, offsets,
+  worker cleanup and English/Chinese checks passed.
+
+Evidence remains local under `artifacts/camera-controls/` (including explicit
+Firefox capability/profile probes), `artifacts/live-camera-browser/`, and
+`artifacts/firefox/camera-controls-rc2-native.json`. The local ZIP/checksum and
+extracted package are under `artifacts/releases/v1.5.0-rc.2/`. No personal browser
+profile was used. Firefox pointer/keyboard coverage is added to the Linux CI
+configuration; the changed CI configuration has not been pushed or run remotely.
+
+**Still required for stable 1.5.0:** physical Windows Chrome/Edge acceptance,
+a real mixed eight-camera installation, and longer sustained runs. The tested
+Firefox/device native-resolution limitation is documented in both quick starts.
+No claim of eight-camera hardware acceptance or sensor hardware pass/fail follows
+from the simulated-camera tests.

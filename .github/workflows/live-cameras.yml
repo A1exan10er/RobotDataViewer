@@ -26,8 +26,15 @@ jobs:
       - run: npm run build
       - name: Simulated camera browser checks
         run: npm run test:live
+      - name: Chrome camera controls (pointer and keyboard)
+        run: node tools/browser-camera-controls.mjs
+      - name: Firefox camera controls (pointer and keyboard)
+        if: runner.os == 'Linux'
+        run: node tools/browser-camera-controls.mjs --firefox
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: live-camera-checks-${{ matrix.os }}
-          path: artifacts/live-camera-browser/
+          path: |
+            artifacts/live-camera-browser/
+            artifacts/camera-controls/

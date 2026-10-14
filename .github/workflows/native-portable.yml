@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/headcam-companion-support, codex/live-camera-inspection]
-    paths: ['tools/native/**', 'tools/force/**', 'src/**', 'vendor/force/**', '.github/workflows/native-portable.yml', 'package*.json']
+    paths: ['tools/native/**', 'tools/force/**', 'tools/release.py', 'docs/**', 'tests/test_native_force.py', 'src/**', 'vendor/force/**', '.github/workflows/native-portable.yml', 'package*.json']
 permissions:
   contents: read
 jobs:
@@ -46,6 +46,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
       - run: python tools/native/build.py
+      - name: Extract and check the portable Start Viewer entry point
+        run: python tools/native/check-startup.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-startup-${{ matrix.label }}.json
       - run: python tools/native/ci-smoke.py ${{ matrix.label }}
       - uses: actions/upload-artifact@v4
         with:
@@ -55,7 +57,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: native-smoke-${{ matrix.label }}
-          path: artifacts/native-smoke-*.json
+          path: |
+            artifacts/native-smoke-*.json
+            artifacts/native-startup-*.json
   nvidia:
     needs: portable
     strategy:

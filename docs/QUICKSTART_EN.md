@@ -1,10 +1,19 @@
 # Robot Data Viewer
 
-Extract the complete portable ZIP before opening the viewer. Keep its notices and source materials together when sharing it. Send your data folders or TAR files separately; recordings are not embedded in the viewer. No installation, server, Python, or internet connection is required. RGB and tactile prepare in parallel and start together.
+For recordings and live USB cameras, use the portable ZIP for your operating system: `windows-x64`, `linux-x64`, or the matching macOS architecture. These packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required. The 1.5.0-rc.3 startup improvements are a local candidate until platform validation is complete.
 
-1. Double-click **viewer.html** to open the viewer in a desktop browser.
-2. Choose **Open folder** for an original episode folder or a folder containing several recordings. Choose **Open TAR** for an original episode `.tar` file.
-3. Select a recording in the sidebar and press **Play**.
+1. **Extract the entire ZIP** to a folder on your computer.
+2. **Start the viewer:** Windows — double-click **Start Viewer.cmd**; Linux — right-click **Start Viewer.sh → Run as a Program**; macOS — double-click **Start Viewer.command**. Your default browser opens automatically. If it does not, copy the local URL displayed in the launcher window into Chrome, Edge or Firefox.
+3. Keep the launcher window open. Choose **Recordings** to open a folder/TAR, or **Live cameras → Start all** and allow camera access.
+4. When finished, close the viewer tab to release cameras, then press **Ctrl+C** in the launcher window to stop the service.
+
+On Linux, some file managers also run **Start Viewer.sh** by double-click. If it opens as text, use **Run as a Program**. Enable **Properties → Permissions → Allow executing file as program** if required. The bundled **RobotDataViewer** executable can also be opened directly.
+
+Keep all files and subfolders together: moving or renaming the whole extracted folder works; copying only the start file does not. This start file belongs to the package and needs no desktop shortcut installation. Keep notices and source materials with copies you share. Send recordings separately; they are not embedded in the viewer.
+
+The smaller, HTML-only `RobotDataViewer.zip` is still available: double-click **viewer.html** in a desktop browser. It has no bundled localhost launcher. Use the platform package for a consistent live-camera permission workflow.
+
+In **Recordings**, choose **Open folder** for an original episode folder or a folder containing several recordings, or **Open TAR** for an original episode `.tar` file. Select a recording in the sidebar and press **Play**. RGB and tactile prepare in parallel and start together.
 
 You can select `local-data` directly. An episode TAR can be opened as collected, without unpacking or preparing it. Everything stays on your computer and works offline.
 
@@ -43,10 +52,10 @@ Values are estimates, not calibrated measurements. The first frame is the
 reference and may already contain contact; the model can predict a nonzero
 baseline. Display gain and rim masking affect only the heatmap, not force.
 
-## Faster native package (1.4.0)
+## Native force preparation
 
-For faster force preparation, extract the native ZIP for your operating system
-and run its RobotDataViewer launcher (Windows: .exe; macOS: Start Viewer.command).
+The platform package also provides faster force preparation through its
+**Start Viewer** launcher.
 Keep the launcher open. It includes Python, OpenCV, ONNX Runtime and FFmpeg;
 recipients install no development tools. Your selected tactile videos are sent
 only to the launcher on this computer. The model loads only when force is requested.
@@ -61,8 +70,24 @@ are supplied separately; see NATIVE_FORCE.md for installation and limitations.
 ## Live USB camera inspection
 
 Choose **Live cameras → Start all** and allow camera access. Assign each device
-as wrist/environment (640×480, 30 Hz) or tactile (640×360, 30 Hz). Raw images
-remain visible; remove contact and click **Calibrate** for tactile response.
+using the visible **Wrist / environment** (640×480, 30 Hz) or **Tactile**
+(640×360, 30 Hz) choices. Use the pencil button to give each camera its own
+name; the original device name stays underneath. **Capture settings** lets you
+enter custom width, height, and frame rate (at least 1 Hz), then **Apply**.
+Requested and actual settings appear separately. **Reset to role defaults**
+removes custom values; changing roles also restores defaults. Changing capture
+settings restarts only that running camera and requires recalibration. Renaming
+does not interrupt capture or calibration. Preferences are remembered by browser
+device identity when storage is available. Raw images remain visible; remove
+contact and click **Calibrate** for tactile response. Firefox, Chrome and Edge
+can use the localhost launcher if direct-file camera permission is unavailable.
 Stop all disables automatic preview of newly connected cameras. See
 [LIVE_CAMERAS.md](LIVE_CAMERAS.md) for controls, permissions, and release-candidate
 validation limits.
+
+On the tested Linux Firefox 156 setup, this USB tactile camera accepts uncropped
+640×480/30 Hz but rejects uncropped 640×360/30 Hz. Keep **Tactile** selected,
+open **Capture settings**, enter **640 / 480 / 30**, choose **Apply → Start**,
+then calibrate. The role and resolution are independent. Use Chrome to request
+the camera's uncropped 640×360 preset; the viewer never silently substitutes
+browser cropping/scaling to make an unsupported request appear successful.

@@ -6,6 +6,17 @@ Open original robot, UMI, and head-camera companion recordings directly. Explore
 
 **Start:** open `viewer.html` from the release package (or `dist/viewer.html` after building from source), then choose **Open folder** or **Open TAR**. Select an episode, a parent folder containing episodes, or an original `.tar` archive. Press Play. No sample preparation, installation, conversion, server, or internet connection is needed.
 
+**Portable startup (local 1.5.0-rc.3 candidate):** the platform ZIP bundles a
+**Start Viewer** entry point: `Start Viewer.cmd` on Windows,
+`Start Viewer.sh` on Linux, and `Start Viewer.command` on macOS. Extract the
+whole folder and run the entry point; it starts the local service and
+opens your default browser. No Python, Node.js, commands or per-PC shortcut setup
+is required. Windows/macOS use double-click; on Linux, right-click
+`Start Viewer.sh` → **Run as a Program** if double-click opens it as text. Keep the launcher window open; close the
+viewer tab and press Ctrl+C in the launcher when finished. These launchers are
+included in platform packages; the HTML-only ZIP continues to open via `viewer.html`.
+New packages stay local until validated; existing published releases are unchanged.
+
 [English quick start](docs/QUICKSTART_EN.md) · [中文使用指南](docs/QUICKSTART_ZH.md)
 
 ## Live cameras (1.5.0 release candidate)
@@ -16,6 +27,12 @@ stream-health indicators, hot-plug handling, and manually calibrated tactile
 response maps. Camera frames remain local. See [live-camera usage and validation
 limits](docs/LIVE_CAMERAS.md). Physical Windows/Linux acceptance is still required
 before stable 1.5.0; the preserved 1.4.0 release remains available.
+
+The local 1.5.0-rc.3 candidate includes visible role choices, independent camera names,
+and custom width/height/frame-rate settings, remembered by browser device identity.
+It remains local during acceptance; the published rc.1 download does not include
+these controls. Use the pencil button to name a device and **Capture settings**
+to change its requested parameters. See the quick starts for Firefox and Chrome.
 
 ## Supported data
 

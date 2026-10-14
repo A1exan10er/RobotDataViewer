@@ -1,7 +1,15 @@
-# Portable native force engine (1.4.0)
+# Portable launcher and native force engine
 
-Extract the platform ZIP and run `RobotDataViewer` (`RobotDataViewer.exe` on
-Windows; `Start Viewer.command` on macOS). Keep the launcher open while viewing.
+Extract the complete platform ZIP, then double-click `Start Viewer.cmd` on
+Windows or `Start Viewer.command` on macOS. On Linux, right-click
+`Start Viewer.sh` and choose **Run as a Program** (some file managers also run it
+on double-click).
+The start files locate the bundled runtime beside them, so the whole folder can
+be moved or renamed without editing paths or installing a shortcut. On Linux,
+enable **Allow executing file as program** in file properties if required. The underlying
+`RobotDataViewer` executable (`.exe` on Windows) remains available.
+Keep the launcher open while viewing; close the browser tab and press Ctrl+C
+in the launcher when finished.
 It opens a random **127.0.0.1** port in your browser. Python, OpenCV, ONNX Runtime
 and a minimal FFmpeg decoder are bundled. No installation or network is needed.
 The HTML-only package remains available; it calculates forces in the browser.

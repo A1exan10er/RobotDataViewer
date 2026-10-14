@@ -1,12 +1,34 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { Maximize2, X, AlertCircle, Play, Square } from 'lucide-vue-next';
-import { LiveFrameHealth, type LiveCamera, type CameraRole } from '../liveCamera';
+import { Maximize2, X, AlertCircle, Play, Square, Pencil } from 'lucide-vue-next';
+import { LiveFrameHealth, CAMERA_PROFILES, configuredFrameRate, requestedProfile, validCameraProfile, type LiveCamera, type CameraRole, type CameraProfile } from '../liveCamera';
 import { LiveTactile, type LiveTactileState } from '../liveTactile';
 import { TactileRenderer, type TactileImage } from '../tactile';
 import { lt } from '../liveI18n';
 const props = defineProps<{ camera: LiveCamera; index: number; expanded: boolean }>();
-const emit = defineEmits<{ role: [role: CameraRole]; start: []; stop: []; retry: []; expand: []; close: [] }>();
+const emit = defineEmits<{ role: [role: CameraRole]; name: [name: string]; profile: [profile?: CameraProfile]; start: []; stop: []; retry: []; expand: []; close: [] }>();
+const roles = ['unassigned', 'scene', 'tactile'] as const;
+const title = computed(() => props.camera.name || props.camera.label || `${lt('camera')} ${props.index+1}`);
+const requested = computed(() => requestedProfile(props.camera));
+const editingName = ref(false), nameDraft = ref(''), nameInput = ref<HTMLInputElement>();
+const settingsOpen = ref(false), settingsError = ref(false);
+const draft = ref({ width: '', height: '', frameRate: '' });
+async function editName() { nameDraft.value = props.camera.name; editingName.value = true; await nextTick(); nameInput.value?.focus(); }
+function saveName() { emit('name', nameDraft.value); editingName.value = false; }
+function chooseRole(role: CameraRole) { settingsOpen.value = false; emit('role', role); }
+function editSettings() {
+  if (settingsOpen.value) { settingsOpen.value = false; return; }
+  const profile = requested.value || { ...CAMERA_PROFILES.scene, ...props.camera.settings };
+  draft.value = { width: String(profile.width), height: String(profile.height), frameRate: String(profile.frameRate) };
+  settingsError.value = false; settingsOpen.value = true;
+}
+function applySettings() {
+  const profile = { width: Number(draft.value.width), height: Number(draft.value.height), frameRate: Number(draft.value.frameRate) };
+  settingsError.value = !validCameraProfile(profile);
+  if (settingsError.value) return;
+  emit('profile', profile); settingsOpen.value = false;
+}
+function resetSettings() { emit('profile'); settingsOpen.value = false; }
 const video = ref<HTMLVideoElement | null>(null), canvas = ref<HTMLCanvasElement | null>(null);
 const health = new LiveFrameHealth(), metrics = ref<ReturnType<LiveFrameHealth['read']>>({ fps: undefined, age: undefined, warning: undefined });
 const responseState = ref<LiveTactileState>('idle'), samples = ref(0), responseAge = ref<number>(), previewError = ref(false), metricsAvailable = ref(true);
@@ -49,16 +71,31 @@ onMounted(() => {
   void attach(); document.addEventListener('visibilitychange', visibility);
   timer = setInterval(() => {
     if (!props.camera.stream) return;
-    if (metricsAvailable.value) metrics.value = health.read(performance.now(), !document.hidden);
+    if (metricsAvailable.value) metrics.value = health.read(performance.now(), !document.hidden, configuredFrameRate(props.camera));
     responseAge.value = response.lastPaint === undefined ? undefined : performance.now() - response.lastPaint;
   }, 500);
 });
 onBeforeUnmount(() => { ++attachment; cancelFrame(); clearInterval(timer); response.reset(); document.removeEventListener('visibilitychange', visibility); if (video.value) { video.value.pause(); video.value.srcObject = null; } });
 </script>
 <template>
-  <article class="live-card" :class="{expanded, 'live-tactile-card':camera.role==='tactile'}" :data-camera="index" :data-status="camera.status" :data-response="responseState">
-    <header class="live-card-header"><div class="live-camera-title"><span class="live-index">{{ String(index+1).padStart(2,'0') }}</span><div><h2 :title="camera.label">{{ camera.label || `${lt('camera')} ${index+1}` }}</h2><span class="live-status" :class="camera.status">{{ lt(camera.status) }}</span></div></div><button v-if="expanded" class="icon-button live-close" @click="emit('close')" :aria-label="lt('close')"><X :size="20" /></button><button v-else class="icon-button" @click="emit('expand')" :aria-label="lt('expand')"><Maximize2 :size="17" /></button></header>
-    <div class="live-card-controls"><select :value="camera.role" @change="emit('role',($event.target as HTMLSelectElement).value as CameraRole)" :aria-label="lt('role')"><option v-for="role in ['unassigned','scene','tactile'] as const" :key="role" :value="role">{{ lt(role) }}</option></select><button v-if="['starting','streaming'].includes(camera.status)" class="button secondary small" @click="emit('stop')"><Square :size="12" />{{ lt('stop') }}</button><button v-else class="button secondary small" :disabled="!camera.present" @click="camera.status==='error'||camera.status==='disconnected'?emit('retry'):emit('start')"><Play :size="12" />{{ lt(camera.status==='error'||camera.status==='disconnected'?'retry':'start') }}</button></div>
+  <article class="live-card" :class="{expanded, 'live-tactile-card':camera.role==='tactile'}" :data-camera="index" :data-status="camera.status" :data-response="responseState" :data-role="camera.role">
+    <header class="live-card-header">
+      <div class="live-camera-title"><span class="live-index">{{ String(index+1).padStart(2,'0') }}</span><div><h2 :title="title">{{ title }}</h2><div class="live-device-name" :title="camera.label">{{ lt('device') }}: {{ camera.label || lt('camera') }}</div><span class="live-status" :class="camera.status">{{ lt(camera.status) }}</span></div></div>
+      <div class="live-header-actions"><button class="icon-button live-rename" @click="editName" :aria-label="lt('rename')"><Pencil :size="16" /></button><button v-if="expanded" class="icon-button live-close" @click="emit('close')" :aria-label="lt('close')"><X :size="20" /></button><button v-else class="icon-button live-expand" @click="emit('expand')" :aria-label="lt('expand')"><Maximize2 :size="17" /></button></div>
+    </header>
+    <form v-if="editingName" class="live-name-form" @submit.prevent="saveName" @keydown.esc.stop="editingName=false">
+      <label>{{ lt('name') }}<input ref="nameInput" v-model="nameDraft" :placeholder="camera.label || lt('camera')" autocomplete="off" /></label>
+      <div class="live-form-actions"><button class="button secondary small" type="submit">{{ lt('save') }}</button><button class="button secondary small" type="button" @click="editingName=false">{{ lt('cancel') }}</button></div>
+    </form>
+    <fieldset class="live-role-controls"><legend>{{ lt('role') }}</legend><div class="live-role-options"><label v-for="role in roles" :key="role" :class="{selected:camera.role===role}"><input type="radio" :name="`role-${camera.id}`" :value="role" :checked="camera.role===role" @change="chooseRole(role)" /><span>{{ lt(`${role}Role`) }}</span></label></div></fieldset>
+    <div class="live-card-controls"><button class="button secondary small live-settings-toggle" :aria-expanded="settingsOpen" @click="editSettings">{{ lt('settings') }}</button><button v-if="['starting','streaming'].includes(camera.status)" class="button secondary small live-stream-toggle" @click="emit('stop')"><Square :size="12" />{{ lt('stop') }}</button><button v-else class="button secondary small live-stream-toggle" :disabled="!camera.present" @click="camera.status==='error'||camera.status==='disconnected'?emit('retry'):emit('start')"><Play :size="12" />{{ lt(camera.status==='error'||camera.status==='disconnected'?'retry':'start') }}</button></div>
+    <form v-if="settingsOpen" class="live-settings-form" novalidate @submit.prevent="applySettings" @keydown.esc.stop="settingsOpen=false">
+      <p>{{ lt('settingsHint') }}</p>
+      <div class="live-setting-fields"><label>{{ lt('width') }}<input v-model="draft.width" type="number" min="1" step="1" name="width" :aria-invalid="settingsError" /></label><label>{{ lt('height') }}<input v-model="draft.height" type="number" min="1" step="1" name="height" :aria-invalid="settingsError" /></label><label>{{ lt('frameRate') }}<input v-model="draft.frameRate" type="number" min="1" step="any" name="frameRate" :aria-invalid="settingsError" /></label></div>
+      <p v-if="settingsError" class="live-field-error" role="alert">{{ lt('invalidSettings') }}</p>
+      <div class="live-form-actions"><button class="button secondary small" type="submit">{{ lt('apply') }}</button><button class="button secondary small" type="button" @click="settingsOpen=false">{{ lt('cancel') }}</button><button class="button secondary small live-settings-reset" type="button" @click="resetSettings">{{ lt('reset') }}</button></div>
+    </form>
+    <div class="live-requested">{{ lt('requested') }} <strong v-if="requested">{{ requested.width }} × {{ requested.height }} · {{ requested.frameRate }} Hz</strong><strong v-else>{{ lt('deviceDefault') }}</strong><span v-if="camera.customProfile"> · {{ lt('custom') }}</span></div>
     <div class="live-images" :class="{'with-response':camera.role==='tactile'}">
       <div class="live-image"><div class="live-image-label">{{ lt('raw') }}</div><video ref="video" autoplay muted playsinline :style="{'aspect-ratio':`${camera.settings?.width || 640} / ${camera.settings?.height || (camera.role==='tactile'?360:480)}`}" /><div v-if="camera.status!=='streaming'" class="live-image-overlay">{{ lt(camera.status) }}</div><div v-else-if="metrics.warning==='stale'" class="live-stale-overlay"><AlertCircle :size="16" />{{ lt('stale') }}</div></div>
       <div v-if="camera.role==='tactile'" class="live-image live-response"><div class="live-image-label">{{ lt('heatmap') }}</div><canvas ref="canvas" width="640" height="360" /><div v-if="responseState!=='ready'" class="live-image-overlay"><span>{{ lt(responseState) }}</span><strong v-if="responseState==='calibrating'">{{ samples }} / 60</strong></div><div v-else-if="responseAge!==undefined && responseAge>2000" class="live-stale-overlay">{{ lt('responseStale') }}</div></div>
@@ -68,6 +105,6 @@ onBeforeUnmount(() => { ++attachment; cancelFrame(); clearInterval(timer); respo
     <p v-if="camera.error || previewError" class="live-card-warning" role="alert"><AlertCircle :size="15" />{{ lt(camera.error || 'playback') }}<button v-if="previewError" class="button secondary small" @click="emit('retry')">{{ lt('retry') }}</button></p>
     <p v-if="camera.stream && metrics.warning && metrics.warning!=='stale'" class="live-card-warning">{{ lt(metrics.warning) }}</p>
     <p v-if="camera.stream && !metricsAvailable" class="live-card-warning">{{ lt('frameMetricsUnavailable') }}</p>
-    <div v-if="camera.role==='tactile'" class="live-calibration"><p>{{ lt('calibrateHint') }}</p><div class="live-response-controls"><button v-if="calibrating" class="button secondary small" @click="clearResponse">{{ lt('cancel') }} · {{ lt(responseState) }}</button><button v-else class="button secondary small" :disabled="!camera.stream || previewError || !metricsAvailable" @click="response.calibrate()">{{ lt(responseState==='idle'?'calibrate':'recalibrate') }}</button><label>{{ lt('gain') }} <input type="range" min="1" max="16" step=".5" v-model.number="gain" :aria-label="lt('gain')" />{{ gain }}×</label><label><input type="checkbox" v-model="cleanup" :true-value="false" :false-value="true" />{{ lt('allChanges') }}</label></div><div class="live-response-footer"><span>{{ lt('responseNote') }}</span><span v-if="responseAge!==undefined">{{ lt('responseAge') }} {{ (responseAge/1000).toFixed(1) }} s</span></div></div>
+    <div v-if="camera.role==='tactile'" class="live-calibration"><p>{{ lt('calibrateHint') }}</p><div class="live-response-controls"><button v-if="calibrating" class="button secondary small" @click="clearResponse">{{ lt('cancel') }} · {{ lt(responseState) }}</button><button v-else class="button secondary small live-calibrate" :disabled="!camera.stream || previewError || !metricsAvailable" @click="response.calibrate(configuredFrameRate(camera))">{{ lt(responseState==='idle'?'calibrate':'recalibrate') }}</button><label>{{ lt('gain') }} <input type="range" min="1" max="16" step=".5" v-model.number="gain" :aria-label="lt('gain')" />{{ gain }}×</label><label><input type="checkbox" v-model="cleanup" :true-value="false" :false-value="true" />{{ lt('allChanges') }}</label></div><div class="live-response-footer"><span>{{ lt('responseNote') }}</span><span v-if="responseAge!==undefined">{{ lt('responseAge') }} {{ (responseAge/1000).toFixed(1) }} s</span></div></div>
   </article>
 </template>

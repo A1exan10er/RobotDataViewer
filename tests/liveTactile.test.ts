@@ -27,6 +27,12 @@ test('only two calibrations run, queued cancellation does not consume a slot',as
 test('calibration timeout releases resources and permits retry',async t=>{
   t.mock.timers.enable({apis:['setTimeout']});const r=rig();const job=r.live.calibrate();await tick();t.mock.timers.tick(10001);await job;assert.equal(r.live.state,'timeout');assert.equal(r.disposed,1);r.live.reset();t.mock.timers.reset();
 });
+test('slow capture extends collection time while keeping all 60 distinct samples',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});const r=rig();const job=r.live.calibrate(5);await tick();
+  for(let n=0;n<60;n++){r.live.frame(source,n,n*200);await tick();t.mock.timers.tick(200);}
+  await job;assert.equal(r.live.state,'ready');assert.equal(r.sampled,60);r.live.reset();
+  const stalled=rig();const timeout=stalled.live.calibrate(5);await tick();t.mock.timers.tick(23999);assert.equal(stalled.live.state,'calibrating');t.mock.timers.tick(1);await timeout;assert.equal(stalled.live.state,'timeout');stalled.live.reset();t.mock.timers.reset();
+});
 test('missing sensing region hides the heatmap without rendering',async()=>{
   const r=rig(undefined,'not-found');const job=r.live.calibrate();await tick();await collect(r);await job;assert.equal(r.live.state,'region');r.live.frame(source,100,4000);await tick();assert.equal(r.rendered,0);r.live.reset();
 });

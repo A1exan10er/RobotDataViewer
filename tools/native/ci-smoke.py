@@ -1,5 +1,5 @@
 """Extract the actual native ZIP and exercise CPU preparation plus restart reuse."""
-import json,os,subprocess,sys,zipfile
+import json,os,subprocess,sys,tempfile,zipfile
 from pathlib import Path
 import cv2,numpy as np
 ROOT=Path(__file__).resolve().parents[2];label=sys.argv[1];version=json.loads((ROOT/'package.json').read_text())['version']
@@ -21,6 +21,9 @@ rng=np.random.default_rng(7);reference=rng.integers(0,255,(360,640,3),dtype=np.u
 for i in range(4):writer.write(reference)
 writer.release();(folder/'video.avi').replace(folder/'video.mp4')
 os.environ['RDV_FFMPEG_DIR']=str(base/'ffmpeg')
-for pass_number in (1,2):
- subprocess.run([sys.executable,str(ROOT/'tools/native/smoke.py'),str(exe),'--source',str(folder.parent),
-  '--storage',str(ROOT/'artifacts/native-smoke-cache'/label),'--output',str(ROOT/f'artifacts/native-smoke-{label}-{pass_number}.json')],check=True)
+with tempfile.TemporaryDirectory(prefix='rdv-native-smoke-') as storage:
+ for pass_number in (1,2):
+  report=ROOT/f'artifacts/native-smoke-{label}-{pass_number}.json'
+  subprocess.run([sys.executable,str(ROOT/'tools/native/smoke.py'),str(exe),'--source',str(folder.parent),
+   '--storage',storage,'--output',str(report)],check=True)
+  assert json.loads(report.read_text())['cachedTracks']==(0 if pass_number==1 else 1)

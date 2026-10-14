@@ -229,7 +229,9 @@ def main():
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True;server.app=app
     atexit.register(app.close);url=f'http://127.0.0.1:{server.server_port}/#native={app.token}'
     print(url,flush=True)
-    if not args.no_browser:webbrowser.open(url)
+    print('Robot Data Viewer is running. Keep this window open; press Ctrl+C to stop.',flush=True)
+    if not args.no_browser and not webbrowser.open(url):
+        print('Open the local URL above in Chrome, Edge or Firefox.',flush=True)
     try:server.serve_forever(poll_interval=.25)
     except KeyboardInterrupt:pass
     finally:server.server_close();app.close()

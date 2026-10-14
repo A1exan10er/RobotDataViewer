@@ -13,11 +13,17 @@ if f'name="application-version" content="{version}"'.encode() not in viewer:
     raise SystemExit('Run npm run build before creating this release (viewer version differs).')
 start = f'''Robot Data Viewer {version} — Portable / 便携版
 
+This is the HTML-only package. For automatic localhost startup, use the native
+ZIP for your operating system and its included Start Viewer file:
+Windows: Start Viewer.cmd; Linux: Start Viewer.sh; macOS: Start Viewer.command.
+Those packages include the runtime: no Python, Node.js or command-line setup.
+
 1. Extract this ZIP completely, then open viewer.html in Firefox, Chrome or Edge.
 2. Choose Open folder or Open TAR and select your original recordings.
 3. Select an episode and press Play once. RGB and tactile start together when ready.
 4. For USB camera inspection, choose Live cameras, Start all, and allow camera access.
-   Assign wrist/environment (640x480/30 Hz) or tactile (640x360/30 Hz) profiles.
+   Choose wrist/environment (640x480/30 Hz) or tactile (640x360/30 Hz) on each card.
+   Use the pencil button to name cameras; Capture settings accepts custom values.
    Remove contact before clicking Calibrate for each tactile response map.
    See LIVE_CAMERAS.md for camera permissions, controls and validation status.
 
@@ -30,11 +36,16 @@ Recordings are not included: share the relevant data folders or uncompressed TAR
 files separately. Keep the complete viewer package, including notices and sources,
 when distributing it. See QUICKSTART_EN.md for controls and display information.
 
+此包为纯 HTML 版。需要自动启动本机服务时，请使用对应系统的原生便携 ZIP，
+运行包内 Start Viewer 文件（Windows: .cmd；Linux: .sh；macOS: .command）。
+原生包包含运行环境，无需安装 Python、Node.js 或配置命令行。
+
 1. 请先完整解压 ZIP，再用 Firefox、Chrome 或 Edge 打开 viewer.html。
 2. 点击“打开文件夹”或“打开 TAR”，选择原始录制数据。
 3. 选择片段后点击一次播放，准备完成后 RGB 和触觉将同步开始。
 4. 检查 USB 相机时，选择“实时相机”并点击“全部启动”，允许相机权限。
-   选择腕部/环境或触觉类型；移除接触后点击“标定”以查看触觉响应。
+   选择腕部/环境或触觉用途；铅笔按钮可命名相机，“采集设置”可自定义规格。
+   移除接触后点击“标定”以查看触觉响应。
    详情及验证状态见 LIVE_CAMERAS.md。
 
 无需安装、服务器、Python、外部解码器或网络。数据仅在本地读取，不会修改或上传。
@@ -48,7 +59,7 @@ with tarfile.open(root / 'sources' / 'RobotDataViewer-source.tar.gz', 'w:gz') as
     for name in ('src', 'vendor', 'docs', 'tests', 'README.md', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.ts', 'THIRD_PARTY_NOTICES.md'):
         path = root / name
         source.add(path, arcname=f'RobotDataViewer/{name}', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith(('.pyc', '.pyo', 'decoder-worker.js', 'decoder.wasm.b64', 'force.onnx', 'deepflow.wasm')) else info)
-    for name in ('release.py', 'package_samples.py', 'browser-force-firefox.py', 'live-camera-fixture.mjs', 'browser-live-cameras.mjs', 'browser-camera-hardware.mjs', 'build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
+    for name in ('release.py', 'package_samples.py', 'browser-force-firefox.py', 'live-camera-fixture.mjs', 'browser-live-cameras.mjs', 'browser-camera-controls.mjs', 'browser-camera-hardware.mjs', 'build-html.mjs', 'prepare-decoder.mjs', 'decoder-worker.js', 'tactile-worker.js'):
         source.add(root / 'tools' / name, arcname=f'RobotDataViewer/tools/{name}')
     source.add(root / 'tools' / 'reference', arcname='RobotDataViewer/tools/reference', filter=lambda info: None if '__pycache__' in info.name or info.name.endswith('.zip') else info)
     source.add(root / 'tools' / 'native', arcname='RobotDataViewer/tools/native', filter=lambda info: None if '__pycache__' in info.name else info)

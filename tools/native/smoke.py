@@ -13,7 +13,8 @@ try:
     headers={'Authorization':'Bearer '+token,'Origin':origin,**(headers or {})})
   with urllib.request.urlopen(req,timeout=60) as response:return json.load(response)
  report['capabilities']=call('capabilities')
- with urllib.request.urlopen(origin) as response:assert b'1.4.0' in response.read()
+ version=json.loads((Path(__file__).resolve().parents[2]/'package.json').read_text())['version']
+ with urllib.request.urlopen(origin) as response:assert f'name="application-version" content="{version}"'.encode() in response.read()
  if a.source:
   import hashlib,sys
   sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'force'))

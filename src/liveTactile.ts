@@ -54,14 +54,15 @@ export class LiveTactile<Image extends { close(): void }> {
     this.renderer?.dispose(); this.renderer = undefined; this.collected = undefined; this.rejectCollection = undefined;
     this.busy = false; this.samples = 0; this.lastPaint = undefined; this.sequence = -1; this.state = 'idle'; this.changed();
   }
-  async calibrate() {
+  async calibrate(frameRate = 30) {
     this.reset(); const generation = this.generation;
     const abort = new AbortController(); this.abort = abort; this.state = 'queued'; this.changed();
     try {
       await this.pool.run(async () => {
         this.renderer = this.create(); this.state = 'calibrating'; this.changed();
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => this.rejectCollection?.(new Error('timeout')), 10000);
+          const rate = Number.isFinite(frameRate) && frameRate >= 1 ? frameRate : 30;
+          const timer = setTimeout(() => this.rejectCollection?.(new Error('timeout')), Math.max(10000, 120000 / rate));
           const cancelled = () => reject(new Error('Cancelled'));
           abort.signal.addEventListener('abort', cancelled, { once: true });
           const clean = () => { clearTimeout(timer); abort.signal.removeEventListener('abort', cancelled); };
