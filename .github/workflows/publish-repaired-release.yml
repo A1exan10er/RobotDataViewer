@@ -1,0 +1,67 @@
+name: Publish verified rc.3 repair
+on:
+  push:
+    branches: [codex/live-camera-inspection]
+    paths: [.github/workflows/publish-repaired-release.yml]
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful Native portable packages run containing release-ready
+        required: true
+        type: string
+      repair_commit:
+        description: Exact clean commit recorded in the tested release manifest
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: write
+jobs:
+  github-release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-ready
+          run-id: ${{ inputs.build_run || '38678088024' }}
+          github-token: ${{ github.token }}
+          path: artifacts/release-ready
+      - name: Verify tested source and retain existing notes until both hosts verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPAIR_COMMIT: ${{ inputs.repair_commit || 'b7c47bb8ae06e6e76d0189d205050c7e9199c38a' }}
+          BUILD_RUN: ${{ inputs.build_run || '38678088024' }}
+        run: |
+          python tools/verify_release.py --directory artifacts/release-ready
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          manifest=json.loads(Path('artifacts/release-ready/RELEASE-MANIFEST.json').read_text())
+          assert manifest['commit']==os.environ['REPAIR_COMMIT']
+          assert manifest['version']=='1.5.0-rc.3' and manifest['dirty'] is False
+          run=json.loads(subprocess.check_output(['gh','api','repos/A1exan10er/RobotDataViewer/actions/runs/'+os.environ['BUILD_RUN']]))
+          assert run['conclusion']=='success' and run['head_sha']==manifest['commit']
+          release=json.loads(subprocess.check_output(['gh','api','repos/A1exan10er/RobotDataViewer/releases/tags/v1.5.0-rc.3']))
+          Path('artifacts/original-notes.md').write_text(release.get('body') or '')
+          PY
+      - name: Back up, publish and download every GitHub asset for verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/publish_release.py --host github --directory artifacts/release-ready --backup artifacts/github-backup --notes artifacts/original-notes.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: github-publication-report
+          retention-days: 30
+          path: |
+            artifacts/github-backup/publication.json
+            artifacts/github-backup/release.json
+            artifacts/github-backup/RobotDataViewer.zip
+            artifacts/github-backup/SHA256SUMS.txt
+            artifacts/github-backup/BUILD-SHA256SUMS.txt
+            artifacts/original-notes.md
+            artifacts/release-ready/RELEASE-MANIFEST.json
