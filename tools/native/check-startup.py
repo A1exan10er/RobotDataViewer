@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import platform
 import shlex
+import signal
 import subprocess
 import tempfile
 import time
@@ -22,7 +23,14 @@ def stop(process):
         children = psutil.Process(process.pid).children(recursive=True)
     except psutil.NoSuchProcess:
         children = []
-    process.terminate()
+    if os.name == 'nt':
+        process.send_signal(signal.CTRL_BREAK_EVENT)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+    else:
+        process.terminate()
     for child in children:
         try:
             child.terminate()
@@ -75,18 +83,20 @@ def main():
         environment.pop('VIRTUAL_ENV', None)
         environment['PATH'] = (str(Path(os.environ['SystemRoot']) / 'System32') if system == 'windows' else '/usr/bin:/bin')
         browser_capture = root / 'opened-url.txt'
-        automatic_browser = system != 'windows'
-        if automatic_browser:
+        if system == 'windows':
+            browser = root / 'capture-browser.cmd'
+            browser.write_text('@echo off\r\necho %~1>"' + str(browser_capture) + '"\r\n')
+            environment['BROWSER'] = f'cmd.exe /d /c "{browser}" %s'
+        else:
             browser = root / 'capture-browser'
             browser.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > ' + shlex.quote(str(browser_capture)) + '\n')
             browser.chmod(0o755)
             environment['BROWSER'] = str(browser) + ' %s'
         command += ['--storage', str(root / 'cache')]
-        if not automatic_browser:
-            command += ['--no-browser']
         log = root / 'launch.log'
         with log.open('wb') as output:
-            process = subprocess.Popen(command, shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(command, shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if system == 'windows' else 0)
             try:
                 deadline = time.monotonic() + 30
                 url = None
@@ -108,20 +118,18 @@ def main():
                 assert json.load(urllib.request.urlopen(request, timeout=10))['native']
                 report['checks'].append('Relocated package with spaces, Unicode and shell metacharacters starts from another working directory without a development environment')
                 report['checks'].append('Serves the packaged version and authenticated native API on loopback')
-                if automatic_browser:
-                    while not browser_capture.exists() and time.monotonic() < deadline:
-                        time.sleep(.1)
-                    assert browser_capture.read_text().strip() == url
-                    report['checks'].append('Default browser receives the complete local launch URL automatically')
+                while not browser_capture.exists() and time.monotonic() < deadline:
+                    time.sleep(.1)
+                assert browser_capture.read_text().strip() == url
+                report['checks'].append('Default browser receives the complete local launch URL automatically')
                 if args.camera_output:
                     subprocess.run(['node', str(Path(__file__).resolve().parents[1] / 'browser-camera-release.mjs'),
                         '--url', url, '--file', str(base / 'viewer.html'), '--output', str(args.camera_output.resolve()),
                         '--archive-sha256', archive_sha256], check=True)
             finally:
                 stop(process)
-        if system != 'windows':
-            assert not list((root / 'cache').glob('temporary/launch-*')), 'Launch resources were not released'
-            report['checks'].append('Launcher shutdown releases its temporary resources')
+        assert not list((root / 'cache').glob('temporary/launch-*')), 'Launch resources were not released'
+        report['checks'].append('Launcher shutdown releases its temporary resources')
         # A copied start file must fail clearly rather than opening stale web content.
         executable.rename(executable.with_suffix('.missing'))
         result = subprocess.run(command, shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)

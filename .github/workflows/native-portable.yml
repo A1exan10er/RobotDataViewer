@@ -75,6 +75,7 @@ jobs:
         shell: msys2 {0}
       - run: python tools/native/build.py
       - uses: browser-actions/setup-chrome@v2
+        if: runner.os != 'macOS'
         id: chrome
       - name: Extract and check the portable Start Viewer entry point
         env:

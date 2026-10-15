@@ -225,6 +225,7 @@ def main():
         run(args.worker,args.model,args.provider);return
     def stopped(*_):raise KeyboardInterrupt
     signal.signal(signal.SIGTERM,stopped)
+    if hasattr(signal,'SIGBREAK'):signal.signal(signal.SIGBREAK,stopped)
     app=Application(args.web,args.model,args.storage,args.provider)
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True;server.app=app
     atexit.register(app.close);url=f'http://127.0.0.1:{server.server_port}/#native={app.token}'

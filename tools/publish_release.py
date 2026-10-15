@@ -131,8 +131,8 @@ def publish(client, directory, backup, notes):
     backup.mkdir(parents=True, exist_ok=False)
     (backup / 'release.json').write_text(json.dumps(release, indent=2) + '\n')
     old = {asset['name']: asset for asset in release['assets']}
-    for name in names:
-        if name in old:
+    for name in old:
+        if Path(name).name == name and name not in ('.', '..'):
             print('Backing up', name, flush=True)
             retry(lambda: client.download(old[name], backup / name))
             expected = old[name].get('size')
@@ -162,6 +162,12 @@ def publish(client, directory, backup, notes):
         (backup / 'publication.json').write_text(json.dumps(result, indent=2) + '\n')
         return result
     except Exception:
+        original_notes = backup / 'original-notes.md'
+        original_notes.write_text(release.get('body') or '')
+        try:
+            retry(lambda: client.notes(release, original_notes))
+        except Exception as error:
+            print(f'Restore failed for release notes: {type(error).__name__}; original metadata retained', flush=True)
         # Restore replaced assets. New, additive assets may remain; no success is claimed.
         for name in changed:
             if name in old:

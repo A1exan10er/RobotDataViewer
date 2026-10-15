@@ -55,7 +55,17 @@ try {
     const element=async selector=>(await command('/element',{using:'css selector',value:selector}))['element-6066-11e4-a52e-4f735466cecf'];
     evaluate=expression=>command('/execute/sync',{script:`return (${expression})`,args:[]});
     click=async selector=>command(`/element/${await element(selector)}/click`,{});
-    type=async(selector,text)=>{const id=await element(selector);await command(`/element/${id}/clear`,{});await command(`/element/${id}/value`,{text});};
+    type=async(selector,text)=>{
+      const id=await element(selector);await command(`/element/${id}/click`,{});
+      // WebDriver clear does not reliably update Vue's model before a render.
+      // Replace the selection through real keyboard input, as the Chrome test does.
+      await command('/actions',{actions:[{type:'key',id:'keyboard',actions:[
+        {type:'keyDown',value:'\uE009'},{type:'keyDown',value:'a'},
+        {type:'keyUp',value:'a'},{type:'keyUp',value:'\uE009'},
+      ]}]});
+      await command(`/element/${id}/value`,{text});
+      assert.equal(await value(selector),text);
+    };
     press=async(selector,key)=>command(`/element/${await element(selector)}/value`,{text:{Enter:'\uE007',Escape:'\uE00C',ArrowLeft:'\uE012',ArrowRight:'\uE014',' ':' '}[key]});
     navigate=()=>command('/url',{url});resize=(width,height=1050)=>command('/window/rect',{width,height});
     screenshot=async name=>writeFile(join(output,name+'.png'),Buffer.from(await command('/screenshot',undefined,'GET'),'base64'));
