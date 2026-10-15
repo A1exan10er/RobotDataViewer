@@ -1,5 +1,5 @@
 """Extract the actual native ZIP and exercise CPU preparation plus restart reuse."""
-import json,os,subprocess,sys,tempfile,zipfile
+import hashlib,json,os,subprocess,sys,tempfile,zipfile
 from pathlib import Path
 import cv2,numpy as np
 ROOT=Path(__file__).resolve().parents[2];label=sys.argv[1];version=json.loads((ROOT/'package.json').read_text())['version']
@@ -27,3 +27,6 @@ with tempfile.TemporaryDirectory(prefix='rdv-native-smoke-') as storage:
   subprocess.run([sys.executable,str(ROOT/'tools/native/smoke.py'),str(exe),'--source',str(folder.parent),
    '--storage',storage,'--output',str(report)],check=True)
   assert json.loads(report.read_text())['cachedTracks']==(0 if pass_number==1 else 1)
+  result=json.loads(report.read_text())
+  result['archiveSha256']=hashlib.sha256((ROOT/'dist'/f'RobotDataViewer-{version}-{label}.zip').read_bytes()).hexdigest()
+  report.write_text(json.dumps(result,indent=2)+'\n')

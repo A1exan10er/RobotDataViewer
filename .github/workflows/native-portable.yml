@@ -1,16 +1,42 @@
 name: Native portable packages
 on:
   workflow_dispatch:
+    inputs:
+      build_nvidia:
+        description: Also rebuild optional NVIDIA add-ons
+        type: boolean
+        default: false
   push:
     branches: [codex/headcam-companion-support, codex/live-camera-inspection]
-    paths: ['tools/native/**', 'tools/force/**', 'tools/release.py', 'docs/**', 'tests/test_native_force.py', 'src/**', 'vendor/force/**', '.github/workflows/native-portable.yml', 'package*.json']
+    paths: ['tools/**', 'docs/**', 'tests/**', 'src/**', 'vendor/force/**', '.github/workflows/native-portable.yml', 'package*.json']
 permissions:
   contents: read
 jobs:
+  web:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: python3 tools/release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer-build-input
+          path: |
+            dist/viewer.html
+            dist/force-runtime.js
+            dist/BUILD.json
+            dist/RobotDataViewer.zip
+            sources/RobotDataViewer-source.tar.gz
+          if-no-files-found: error
   portable:
+    needs: web
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 4
       matrix:
         include:
           - {os: ubuntu-22.04, label: linux-x64}
@@ -38,30 +64,69 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run test:python
-      - run: npm run build
-      - run: python tools/release.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: viewer-build-input
+          path: .
       - run: python tools/native/build-ffmpeg.py
         if: runner.os != 'Windows'
       - run: python tools/native/build-ffmpeg.py
         if: runner.os == 'Windows'
         shell: msys2 {0}
       - run: python tools/native/build.py
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
       - name: Extract and check the portable Start Viewer entry point
-        run: python tools/native/check-startup.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-startup-${{ matrix.label }}.json
+        env:
+          ROBOT_VIEWER_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        run: python tools/native/check-startup.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-startup-${{ matrix.label }}.json --camera-output artifacts/native-cameras-${{ matrix.label }}.json
       - run: python tools/native/ci-smoke.py ${{ matrix.label }}
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: RobotDataViewer-html
+          path: dist/RobotDataViewer.zip
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: RobotDataViewer-${{ matrix.label }}
           path: dist/RobotDataViewer-*.zip*
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: native-smoke-${{ matrix.label }}
           path: |
             artifacts/native-smoke-*.json
             artifacts/native-startup-*.json
+            artifacts/native-cameras-*.json
+  release-set:
+    needs: portable
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: RobotDataViewer-*
+          path: artifacts/release-input
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-smoke-*
+          path: artifacts/release-reports
+          merge-multiple: true
+      - name: Verify every platform and assemble matching source and checksums
+        run: python tools/verify_release.py --directory artifacts/release-input --reports artifacts/release-reports --output artifacts/release-ready
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ready
+          path: artifacts/release-ready/*
+          if-no-files-found: error
   nvidia:
     needs: portable
+    if: github.event_name == 'workflow_dispatch' && inputs.build_nvidia
     strategy:
       fail-fast: false
       max-parallel: 1

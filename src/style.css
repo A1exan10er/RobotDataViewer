@@ -1537,6 +1537,10 @@ small {
 .live-card-warning,.live-error { color:#e6bd91; background:#33291d66; display:flex; align-items:center; gap:8px; line-height:1.6; padding:10px 16px; font-size:12px }
 .live-error { border:1px solid #685340; border-radius:8px; margin-bottom:16px }
 .live-notice { padding:12px 0; color:#b1c9e9; font-size:13px }
+.live-startup-help { margin-bottom:16px; padding:16px; border:1px solid #354a60; border-radius:8px; background:#172435; color:#c3d3e5; font-size:13px; line-height:1.6 }
+.live-startup-help p { margin:6px 0 }
+.live-startup-help nav { display:flex; flex-wrap:wrap; gap:12px }
+.live-startup-help a { color:#a4ceff; text-decoration:underline }
 .live-footnote { margin:20px 0 0; max-width:1100px; color:#778b9f; font-size:11px; line-height:1.7 }
 .live-card.expanded { position:fixed; inset:20px; z-index:110; overflow:auto; box-shadow:0 0 0 100vmax #070b12ed; max-width:1600px; margin:auto }
 .live-card.expanded .live-image video,.live-card.expanded .live-image canvas { max-height:calc(100dvh - 320px); min-height:180px }

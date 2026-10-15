@@ -1,6 +1,6 @@
 # 机器人数据查看器
 
-查看录制数据和 USB 实时相机时，请选择对应操作系统的便携版 ZIP：`windows-x64`、`linux-x64` 或匹配架构的 macOS 版本。运行环境已包含，使用者只需桌面浏览器，无需安装 Python、Node.js、配置服务器或连接网络。1.5.0-rc.3 的便捷启动改进目前仍为本地候选版本，待各平台验证完成后发布。
+查看录制数据和 USB 实时相机时，请选择发布页中实际附带的对应操作系统便携版 ZIP：`windows-x64`、`linux-x64`、`macos-x64`（Intel）或 `macos-arm64`（Apple Silicon）。运行环境已包含，使用者只需桌面浏览器；下载完成后无需安装 Python、Node.js、配置服务器或连接网络。此版本仍为候选版本，以发布页验证记录为准。
 
 1. 将 **整个 ZIP 完整解压** 到本机文件夹。
 2. **启动查看器：** Windows 双击 **Start Viewer.cmd**；Linux 右击 **Start Viewer.sh → 作为程序运行**；macOS 双击 **Start Viewer.command**。默认浏览器将自动打开；若未打开，请将启动窗口中的本机网址复制到 Chrome、Edge 或 Firefox。
@@ -12,6 +12,12 @@
 所有文件和子目录须保留在一起，可以整体移动或重命名解压后的文件夹；不要只复制启动文件。启动入口随软件包分发，无需安装桌面快捷方式。分发给同事或客户时请保留许可声明与源码材料；录制数据文件夹或 TAR 请单独提供。
 
 较小的纯 HTML 版 `RobotDataViewer.zip` 仍可双击 **viewer.html** 打开，但不含 localhost 启动器。检查实时相机时，建议使用对应系统的便携包，让浏览器通过本机网址请求相机权限。
+
+请从 [GitHub 发布页](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) 或 [Gitea 发布页](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3) 选择实际附带的系统包：Linux x64、Windows x64、macOS Intel 或 Apple Silicon。以发布页附件与验证记录为准。
+
+如果 **全部启动** 按钮不可用，表示当前页面不具备安全环境或浏览器未提供相机接口，此时尚未执行设备检测。请打开 **Start Viewer**（Linux 也可直接打开 **RobotDataViewer** 可执行文件），在桌面版 Chrome、Edge 或 Firefox 中访问启动器显示的 `http://127.0.0.1` 地址。直接打开 `file:` 文件能否使用相机取决于浏览器；普通远程 HTTP 页面无法访问相机。点击启动后若提示权限被拒绝，请在浏览器及系统设置中允许相机访问后重试。
+
+同版本修复包通过 **BUILD.json** 标明构建提交与查看器校验值。请使用发布页的 **SHA256SUMS.txt** 和 **RELEASE-MANIFEST.json** 校验下载；附带的 repaired-source 源码包对应修复提交，GitHub/Gitea 自动生成的标签源码包仍为原始 rc.3 源码。
 
 在 **录制数据** 中点击 **打开文件夹**，选择原始记录文件夹或包含多段记录的上级文件夹；也可以点击 **打开 TAR**，直接选择原始记录的 `.tar` 文件。在侧栏中选择记录并点击 **播放**，RGB 和触觉会并行准备并同步开始播放。
 

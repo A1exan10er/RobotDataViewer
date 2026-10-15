@@ -8,12 +8,22 @@ profiles and live force estimates are outside this mode.
 
 ## Start and identify cameras
 
-Open the extracted `viewer.html` in Firefox/Chrome/Edge, or use the existing native
-localhost launcher. Choose **Live cameras → Start all**, then allow camera access.
+For live cameras, start the extracted desktop package using **Start Viewer.cmd**
+(Windows), **Start Viewer.sh** or **RobotDataViewer** (Linux), or **Start Viewer.command**
+(macOS). Keep the launcher open and use its local address in desktop Firefox,
+Chrome or Edge. Choose **Live cameras → Start all**, then allow camera access.
+The HTML-only ZIP has no executable. Directly opening its `viewer.html` can work
+when the browser provides camera access, but is not the recommended startup path.
 An ordinary remote HTTP page cannot access cameras; use local files, localhost,
 or HTTPS. If a browser blocks camera access from a local file, use the localhost
 launcher. System camera privacy settings and other applications can also prevent
 access. The application never requests microphone access.
+
+A disabled **Start all** means the page is insecure or the browser has not exposed
+the camera APIs; no device detection has run yet. The viewer explains which
+condition applies and links to desktop packages on both release hosts. Opening
+the native executable and opening `viewer.html` use different browser contexts
+even when the HTML contents are identical.
 
 Newly attached cameras start while automatic capture is active. **Stop all**
 disables this behavior. An individual **Stop** is retained through refresh and
@@ -119,8 +129,8 @@ the page releases capture tracks and tactile workers.
 
 ## Validation and release gate
 
-1.5.0-rc.2 is a local development candidate; it has not been uploaded. The earlier
-1.5.0-rc.1 remains available. One physical tactile camera has been tested on
+1.5.0-rc.3 remains a pre-release, including same-version repaired packages. Check
+the release manifest for the exact build commit and validation reports. One physical tactile camera has been tested on
 Linux Chrome: both profiles, calibration, contact response and release, physical
 unplug/replug with automatic recovery, recalibration, and sustained preview.
 Firefox acceptance uses the explicit uncropped 640×480/30 Hz custom setting
@@ -157,3 +167,10 @@ to an extracted package folder or `ROBOT_VIEWER_URL` to the local launcher URL.
 
 API references: [Media Capture and Streams](https://www.w3.org/TR/mediacapture-streams/)
 and [video frame callbacks](https://wicg.github.io/video-rvfc/).
+
+Release packaging additionally runs `tools/native/check-startup.py` with
+`--camera-output`. This extracts the ZIP, invokes its real entry point and runs
+`tools/browser-camera-release.mjs` with Chromium's synthetic device through the
+actual browser media APIs. It covers localhost/file startup, discovery, frame
+progress, refresh, permission rejection, track cleanup, and bilingual recovery
+guidance for unsupported contexts. These tests do not access physical cameras.

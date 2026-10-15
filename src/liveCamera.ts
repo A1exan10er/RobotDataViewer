@@ -47,14 +47,19 @@ export function cameraError(error: unknown): CameraError {
     : name === 'NotReadableError' || name === 'AbortError' ? 'busy'
     : name === 'OverconstrainedError' ? 'profile' : 'capture';
 }
-export function browserCapture(): CaptureAdapter | undefined {
-  const media = navigator.mediaDevices;
-  if (!window.isSecureContext || !media?.getUserMedia || !media.enumerateDevices) return;
-  return {
+export type CaptureAvailability = { adapter: CaptureAdapter; reason?: never }
+  | { adapter?: never; reason: 'insecureContext' | 'missingCameraApi' };
+export function browserCapture(environment: { secureContext: boolean; mediaDevices?: MediaDevices } = {
+  secureContext: window.isSecureContext, mediaDevices: navigator.mediaDevices,
+}): CaptureAvailability {
+  const media = environment.mediaDevices;
+  if (!environment.secureContext) return { reason: 'insecureContext' };
+  if (!media?.getUserMedia || !media.enumerateDevices) return { reason: 'missingCameraApi' };
+  return { adapter: {
     enumerate: () => media.enumerateDevices(), open: constraints => media.getUserMedia(constraints),
-    resizeMode: !!(media.getSupportedConstraints() as MediaTrackSupportedConstraints & { resizeMode?: boolean }).resizeMode,
+    resizeMode: !!(media.getSupportedConstraints?.() as (MediaTrackSupportedConstraints & { resizeMode?: boolean }) | undefined)?.resizeMode,
     subscribe: changed => { media.addEventListener('devicechange', changed); return () => media.removeEventListener('devicechange', changed); },
-  };
+  } };
 }
 function stopStream(stream?: MediaStream) { stream?.getTracks().forEach(track => track.stop()); }
 

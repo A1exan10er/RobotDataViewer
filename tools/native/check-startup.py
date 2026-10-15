@@ -42,9 +42,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--camera-output', type=Path, help='Run real browser media API checks with synthetic cameras')
     args = parser.parse_args()
     system = {'Linux': 'linux', 'Windows': 'windows', 'Darwin': 'macos'}[platform.system()]
     report = {'platform': system, 'checks': []}
+    archive_sha256 = hashlib.sha256(args.archive.read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory(prefix='rdv-startup-') as temporary:
         root = Path(temporary)
         with zipfile.ZipFile(args.archive) as archive:
@@ -111,6 +113,10 @@ def main():
                         time.sleep(.1)
                     assert browser_capture.read_text().strip() == url
                     report['checks'].append('Default browser receives the complete local launch URL automatically')
+                if args.camera_output:
+                    subprocess.run(['node', str(Path(__file__).resolve().parents[1] / 'browser-camera-release.mjs'),
+                        '--url', url, '--file', str(base / 'viewer.html'), '--output', str(args.camera_output.resolve()),
+                        '--archive-sha256', archive_sha256], check=True)
             finally:
                 stop(process)
         if system != 'windows':
@@ -121,7 +127,7 @@ def main():
         result = subprocess.run(command, shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
         assert result.returncode != 0 and b'package is incomplete' in result.stdout
         report['checks'].append('Incomplete extraction reports an actionable error')
-    report['archiveSha256'] = hashlib.sha256(args.archive.read_bytes()).hexdigest()
+    report['archiveSha256'] = archive_sha256
     report['passed'] = True
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

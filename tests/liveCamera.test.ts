@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LiveCameraSession, LiveFrameHealth, requestedProfile, validCameraProfile, type CaptureAdapter } from '../src/liveCamera.ts';
+import { browserCapture, LiveCameraSession, LiveFrameHealth, requestedProfile, validCameraProfile, type CaptureAdapter } from '../src/liveCamera.ts';
+test('browser capability failures explain disabled capture without requesting permission',async()=>{
+  let opens=0;
+  const events=new EventTarget();
+  const media=Object.assign(events,{getUserMedia:async()=>{opens++;return stream('a').stream;},enumerateDevices:async()=>[],getSupportedConstraints:()=>({resizeMode:true})}) as unknown as MediaDevices;
+  assert.equal(browserCapture({secureContext:false,mediaDevices:media}).reason,'insecureContext');
+  assert.equal(browserCapture({secureContext:true}).reason,'missingCameraApi');
+  assert.equal(browserCapture({secureContext:true,mediaDevices:{enumerateDevices:media.enumerateDevices} as MediaDevices}).reason,'missingCameraApi');
+  assert.equal(browserCapture({secureContext:true,mediaDevices:{getUserMedia:media.getUserMedia} as MediaDevices}).reason,'missingCameraApi');
+  const capture=browserCapture({secureContext:true,mediaDevices:media});
+  assert.equal(capture.reason,undefined);assert.equal(opens,0);
+  assert.equal(capture.adapter?.resizeMode,true);
+  await capture.adapter!.open({video:true,audio:false});assert.equal(opens,1);
+  let changed=0;const unsubscribe=capture.adapter!.subscribe(()=>changed++);
+  events.dispatchEvent(new Event('devicechange'));assert.equal(changed,1);
+  unsubscribe();events.dispatchEvent(new Event('devicechange'));assert.equal(changed,1);
+  const minimal=browserCapture({secureContext:true,mediaDevices:Object.assign(events,{getSupportedConstraints:undefined}) as unknown as MediaDevices});
+  assert.equal(minimal.adapter?.resizeMode,false);
+});
 const tick = async () => { for(let i=0;i<10;i++) await Promise.resolve(); };
 class Track extends EventTarget {
   readyState = 'live'; stopped = false;

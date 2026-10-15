@@ -1,6 +1,6 @@
 # Robot Data Viewer
 
-For recordings and live USB cameras, use the portable ZIP for your operating system: `windows-x64`, `linux-x64`, or the matching macOS architecture. These packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required. The 1.5.0-rc.3 startup improvements are a local candidate until platform validation is complete.
+For recordings and live USB cameras, choose an attached desktop ZIP for your operating system from the [GitHub release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): `windows-x64`, `linux-x64`, `macos-x64` (Intel), or `macos-arm64` (Apple Silicon). Desktop packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required after downloading. Check the release's attached assets and validation notes for availability.
 
 1. **Extract the entire ZIP** to a folder on your computer.
 2. **Start the viewer:** Windows — double-click **Start Viewer.cmd**; Linux — right-click **Start Viewer.sh → Run as a Program**; macOS — double-click **Start Viewer.command**. Your default browser opens automatically. If it does not, copy the local URL displayed in the launcher window into Chrome, Edge or Firefox.
@@ -12,6 +12,10 @@ On Linux, some file managers also run **Start Viewer.sh** by double-click. If it
 Keep all files and subfolders together: moving or renaming the whole extracted folder works; copying only the start file does not. This start file belongs to the package and needs no desktop shortcut installation. Keep notices and source materials with copies you share. Send recordings separately; they are not embedded in the viewer.
 
 The smaller, HTML-only `RobotDataViewer.zip` is still available: double-click **viewer.html** in a desktop browser. It has no bundled localhost launcher. Use the platform package for a consistent live-camera permission workflow.
+
+If **Start all** is disabled, the current page cannot access the browser's camera API; this is not a camera detection result. Open **Start Viewer** (or the Linux **RobotDataViewer** executable) and use its `http://127.0.0.1` address in desktop Chrome, Edge or Firefox. Direct `file:` camera access depends on the browser. A normal remote HTTP page cannot access cameras. If access is denied after Start all, allow it in browser/system camera settings and retry.
+
+Same-version repaired packages identify their source commit and viewer checksum in **BUILD.json**. Use **SHA256SUMS.txt** and **RELEASE-MANIFEST.json** from the release to verify downloads; the attached repaired-source archive corresponds to the repair commit. GitHub/Gitea automatically generated tag source archives remain the original rc.3 source.
 
 In **Recordings**, choose **Open folder** for an original episode folder or a folder containing several recordings, or **Open TAR** for an original episode `.tar` file. Select a recording in the sidebar and press **Play**. RGB and tactile prepare in parallel and start together.
 

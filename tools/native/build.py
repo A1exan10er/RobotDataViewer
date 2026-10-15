@@ -13,16 +13,21 @@ import zipfile
 from package_launchers import write_launchers
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tools'))
+from build_metadata import read_web_metadata, build_metadata
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--nvidia',action='store_true');p.add_argument('--ffmpeg',type=Path,default=ROOT/'artifacts/native-ffmpeg/install/bin');a=p.parse_args()
 version=json.loads((ROOT/'package.json').read_text())['version'];system={'Linux':'linux','Windows':'windows','Darwin':'macos'}[platform.system()]
 arch={'AMD64':'x64','x86_64':'x64','arm64':'arm64','aarch64':'arm64'}[platform.machine()]
 label=f'{system}-{arch}'+('-nvidia' if a.nvidia else '')
+metadata=build_metadata(ROOT) if not a.nvidia else None
+if not a.nvidia:metadata=read_web_metadata(ROOT)
 if a.nvidia and (system=='macos' or arch!='x64'):raise SystemExit('NVIDIA add-ons support Windows/Linux x64 only')
 work=ROOT/'artifacts/native-build'/label;work.mkdir(parents=True,exist_ok=True)
 name='RobotDataViewerEngine' if a.nvidia else 'RobotDataViewer';extension='.exe' if os.name=='nt' else ''
 args=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onedir','--name',name,'--distpath',str(work/'output'),
  '--workpath',str(work/'work'),'--specpath',str(work),'--paths',str(ROOT/'tools/force'),'--paths',str(ROOT/'tools/native'),
  '--hidden-import','worker','--hidden-import','engine','--hidden-import','model','--hidden-import','psutil','--collect-all','onnxruntime',
+ '--collect-submodules','backports.tarfile',
  '--exclude-module','torch','--exclude-module','torchvision','--exclude-module','onnx','--exclude-module','matplotlib','--exclude-module','scipy']
 if a.nvidia:
     for module in ('nvidia.cuda_runtime','nvidia.cublas','nvidia.cudnn','nvidia.cufft','nvidia.curand','nvidia.nvjitlink'):
@@ -50,7 +55,7 @@ else:
     text=urllib.request.urlopen('https://raw.githubusercontent.com/python/cpython/v'+platform.python_version()+'/LICENSE',timeout=30).read()
     (licenses/'Python.txt').write_bytes(text)
 
-packages=['numpy','opencv-contrib-python-headless','psutil','pyinstaller', 'onnxruntime-gpu' if a.nvidia else 'onnxruntime-directml' if system=='windows' else 'onnxruntime']
+packages=['numpy','opencv-contrib-python-headless','psutil','pyinstaller','backports.tarfile', 'onnxruntime-gpu' if a.nvidia else 'onnxruntime-directml' if system=='windows' else 'onnxruntime']
 if a.nvidia:packages+=[d.metadata['Name'] for d in importlib.metadata.distributions() if d.metadata['Name'].startswith('nvidia-')]
 versions={}
 for package in packages:
@@ -60,7 +65,10 @@ for package in packages:
             source=Path(dist.locate_file(file))
             if source.is_file():shutil.copy2(source,licenses/(package+'-'+str(file).replace('/','_').replace('\\','_')))
 shutil.copytree(ROOT/'vendor/force/licenses',licenses/'force',dirs_exist_ok=True)
-(output/'BUILD.json').write_text(json.dumps({'version':version,'platform':label,'python':platform.python_version(),'dependencies':versions},indent=2)+'\n')
+if a.nvidia:
+    from build_metadata import git
+    metadata={'version':version,'commit':git(ROOT,'rev-parse','HEAD'),'dirty':bool(git(ROOT,'status','--porcelain'))}
+(output/'BUILD.json').write_text(json.dumps({**metadata,'platform':label,'python':platform.python_version(),'dependencies':versions},indent=2)+'\n')
 if a.nvidia:
     (output/'START_HERE.txt').write_text('Extract the nvidia directory beside the base RobotDataViewer launcher, then run the base launcher.\nThe base launcher automatically uses this optional engine. A compatible NVIDIA driver is required.\n将 nvidia 文件夹解压到主启动器旁，运行主启动器即可自动使用此加速组件。需要兼容的 NVIDIA 驱动。\n',encoding='utf-8')
 archive=ROOT/'dist'/f'RobotDataViewer-{version}-{label}.zip'
