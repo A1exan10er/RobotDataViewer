@@ -8,6 +8,7 @@ import platform
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import parse_qs, urlsplit
@@ -84,9 +85,11 @@ def main():
         environment['PATH'] = (str(Path(os.environ['SystemRoot']) / 'System32') if system == 'windows' else '/usr/bin:/bin')
         browser_capture = root / 'opened-url.txt'
         if system == 'windows':
-            browser = root / 'capture-browser.cmd'
-            browser.write_text('@echo off\r\necho %~1>"' + str(browser_capture) + '"\r\n')
-            environment['BROWSER'] = f'cmd.exe /d /c "{browser}" %s'
+            # This stand-in for the installed browser uses an explicit test-only
+            # interpreter. cmd batch arguments split the URL's native= token.
+            browser = root / 'capture-browser.py'
+            browser.write_text('import pathlib, sys\npathlib.Path(' + repr(str(browser_capture)) + ').write_text(sys.argv[1])\n')
+            environment['BROWSER'] = f'"{sys.executable}" "{browser}" %s'
         else:
             browser = root / 'capture-browser'
             browser.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > ' + shlex.quote(str(browser_capture)) + '\n')
@@ -120,7 +123,7 @@ def main():
                 report['checks'].append('Serves the packaged version and authenticated native API on loopback')
                 while not browser_capture.exists() and time.monotonic() < deadline:
                     time.sleep(.1)
-                assert browser_capture.read_text().strip() == url
+                assert browser_capture.read_text().strip() == url, 'Browser did not receive the complete launch URL'
                 report['checks'].append('Default browser receives the complete local launch URL automatically')
                 if args.camera_output:
                     subprocess.run(['node', str(Path(__file__).resolve().parents[1] / 'browser-camera-release.mjs'),
