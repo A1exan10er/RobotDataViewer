@@ -1,8 +1,5 @@
 name: Publish verified rc.3 repair
 on:
-  push:
-    branches: [codex/live-camera-inspection]
-    paths: [.github/workflows/publish-repaired-release.yml]
   workflow_dispatch:
     inputs:
       build_run:
@@ -27,14 +24,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: release-ready
-          run-id: ${{ inputs.build_run || '38678088024' }}
+          run-id: ${{ inputs.build_run }}
           github-token: ${{ github.token }}
           path: artifacts/release-ready
       - name: Verify tested source and retain existing notes until both hosts verify
         env:
           GH_TOKEN: ${{ github.token }}
-          REPAIR_COMMIT: ${{ inputs.repair_commit || 'b7c47bb8ae06e6e76d0189d205050c7e9199c38a' }}
-          BUILD_RUN: ${{ inputs.build_run || '38678088024' }}
+          REPAIR_COMMIT: ${{ inputs.repair_commit }}
+          BUILD_RUN: ${{ inputs.build_run }}
         run: |
           python tools/verify_release.py --directory artifacts/release-ready
           python - <<'PY'

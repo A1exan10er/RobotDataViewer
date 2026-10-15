@@ -1,9 +1,9 @@
 # 机器人数据查看器
 
-查看录制数据和 USB 实时相机时，请选择发布页中实际附带的对应操作系统便携版 ZIP：`windows-x64`、`linux-x64`、`macos-x64`（Intel）或 `macos-arm64`（Apple Silicon）。运行环境已包含，使用者只需桌面浏览器；下载完成后无需安装 Python、Node.js、配置服务器或连接网络。此版本仍为候选版本，以发布页验证记录为准。
+查看录制数据和 USB 实时相机时，请选择发布页中实际附带的对应操作系统便携版 ZIP：`windows-x64`、`linux-x64`、`macos-x64`（Intel）或 `macos-arm64`（Apple Silicon）。运行环境已包含，使用者只需桌面浏览器；下载完成后无需安装 Python、Node.js、配置服务器或连接网络。四个平台包均已在两个发布站点提供，并通过重新下载校验。此版本仍为候选版本，以发布页验证记录为准。
 
 1. 将 **整个 ZIP 完整解压** 到本机文件夹。
-2. **启动查看器：** Windows 双击 **Start Viewer.cmd**；Linux 右击 **Start Viewer.sh → 作为程序运行**；macOS 双击 **Start Viewer.command**。默认浏览器将自动打开；若未打开，请将启动窗口中的本机网址复制到 Chrome、Edge 或 Firefox。
+2. **启动查看器：** Windows 双击 **Start Viewer.cmd**；Linux 打开 **RobotDataViewer**，或右击 **Start Viewer.sh → 作为程序运行**；macOS 双击 **Start Viewer.command**。默认浏览器将自动打开；若未打开，请将启动窗口中的本机网址复制到 Chrome、Edge 或 Firefox。
 3. 保持启动窗口开启。选择 **录制数据** 打开文件夹/TAR，或选择 **实时相机 → 全部启动** 并允许使用相机。
 4. 使用结束后关闭查看器标签页以释放相机，再在启动窗口按 **Ctrl+C** 停止服务。
 
@@ -17,7 +17,7 @@
 
 如果 **全部启动** 按钮不可用，表示当前页面不具备安全环境或浏览器未提供相机接口，此时尚未执行设备检测。请打开 **Start Viewer**（Linux 也可直接打开 **RobotDataViewer** 可执行文件），在桌面版 Chrome、Edge 或 Firefox 中访问启动器显示的 `http://127.0.0.1` 地址。直接打开 `file:` 文件能否使用相机取决于浏览器；普通远程 HTTP 页面无法访问相机。点击启动后若提示权限被拒绝，请在浏览器及系统设置中允许相机访问后重试。
 
-同版本修复包通过 **BUILD.json** 标明构建提交与查看器校验值。请使用发布页的 **SHA256SUMS.txt** 和 **RELEASE-MANIFEST.json** 校验下载；附带的 repaired-source 源码包对应修复提交，GitHub/Gitea 自动生成的标签源码包仍为原始 rc.3 源码。
+修复版 **v1.5.0-rc.3** 对应提交 **b7c47bb8ae06e6e76d0189d205050c7e9199c38a**。同版本修复包通过 **BUILD.json** 标明构建提交与查看器校验值。请使用发布页的 **SHA256SUMS.txt** 和 **RELEASE-MANIFEST.json** 校验下载；附带的 repaired-source 源码包对应修复提交，GitHub/Gitea 自动生成的标签源码包仍为原始 rc.3 源码。
 
 在 **录制数据** 中点击 **打开文件夹**，选择原始记录文件夹或包含多段记录的上级文件夹；也可以点击 **打开 TAR**，直接选择原始记录的 `.tar` 文件。在侧栏中选择记录并点击 **播放**，RGB 和触觉会并行准备并同步开始播放。
 
@@ -85,3 +85,5 @@ Python、OpenCV、ONNX Runtime 和 FFmpeg 已包含，无需安装开发工具�
 **640 / 480 / 30**，点击“应用 → 启动”，再进行标定。用途与分辨率相互独立。
 需要不裁剪的 640×360 预设时可使用 Chrome；查看器不会通过静默裁剪或缩放
 将不支持的规格显示为成功。
+
+本次修复验收中，Linux Chrome 155 和 Firefox 157 均通过原生启动器完成一分钟真实相机预览，并在退出实时模式时释放相机。Chrome 触觉校准通过；Firefox 需显式设置 640×480/30 Hz，本次校准提示“未找到感知区域”，但原始视频保持正常。Windows/macOS 已通过自动化启动和合成相机检查，真实相机硬件验收仍待完成。

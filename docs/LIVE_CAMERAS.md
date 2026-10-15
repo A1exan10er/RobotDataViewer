@@ -129,6 +129,16 @@ the page releases capture tracks and tactile workers.
 
 ## Validation and release gate
 
+The repaired build `b7c47bb` passed extracted-launcher and synthetic-camera
+checks on Linux x64, Windows x64, macOS Intel and Apple Silicon. The downloaded
+Linux package also passed one-minute physical-camera capture in Chrome 155 and
+Firefox 157, including release when leaving live mode. Chrome tactile calibration
+succeeded at 640×360/30 Hz. Firefox captured at the explicit 640×480/30 Hz setting
+but reported **Sensing region not found** during calibration; raw video remained
+stable. The earlier calibration wait timed out on this separate sensing-region
+limitation. See [the repair validation record](VALIDATION.md) for evidence and
+remaining physical-camera acceptance limits.
+
 1.5.0-rc.3 remains a pre-release, including same-version repaired packages. Check
 the release manifest for the exact build commit and validation reports. One physical tactile camera has been tested on
 Linux Chrome: both profiles, calibration, contact response and release, physical

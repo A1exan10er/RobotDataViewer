@@ -1,5 +1,49 @@
 # Validation
 
+## v1.5.0-rc.3 repair — 15 October 2026
+
+Published repair commit: `b7c47bb8ae06e6e76d0189d205050c7e9199c38a`.
+The original tag remains `52bd8f4147311baa6df3a1112ff5a2404c4e818d`.
+The repaired viewer SHA-256 is
+`6e0dd65dbc9137ffa0186624154b207e306c322b868af0f6d6f4d927e057682e`.
+
+The original GitHub HTML ZIP and USB Linux package used identical viewer code
+(SHA-256 `badba80dea4ab9013012df826cea5bcd601a230704be592ef5a650ac7241876c`).
+GitHub lacked the native launcher after failed uploads. The USB executable starts
+a loopback service; opening the HTML directly depends on browser camera support.
+Disabled Start all meant capture initialization was unavailable, before detection.
+
+The [native workflow](https://github.com/A1exan10er/RobotDataViewer/actions/runs/38678088024)
+passed on Linux x64, Windows x64, macOS Intel and Apple Silicon. Extracted packages
+passed relocation (spaces, Unicode and shell metacharacters), browser URL handoff,
+loopback serving, incomplete-extraction errors and shutdown cleanup. Each platform
+also passed actual browser media APIs with synthetic cameras: file/localhost
+capture, permission rejection, refresh and track release, plus English/Chinese
+unsupported-context guidance. Native force cold preparation and restart cache
+reuse passed for each exact archive.
+
+The [camera regression](https://github.com/A1exan10er/RobotDataViewer/actions/runs/38678088030)
+passed on Linux and Windows, including Chrome controls and Linux Firefox controls.
+One Linux attempt timed out during Chrome startup before loading the viewer; the
+rerun passed. All 15 Node test files, 22 Python tests and production builds passed.
+
+The exact downloaded Linux package was tested through Start Viewer.sh with the
+connected USB tactile camera in temporary Chrome 155 and Firefox 157 profiles.
+Both streamed for one minute and released the camera when leaving live mode.
+Chrome calibrated at 640×360/30 Hz. Firefox required an explicit 640×480/30 Hz
+override and returned `region` (sensing region not found), while raw video remained
+stable. The earlier wait for a ready heatmap timed out on that diagnostic state;
+this was not camera detection failure. Physical-camera acceptance on Windows/macOS,
+manual desktop trust prompts, mixed eight-camera hardware and longer runs remain
+pending. No claim of stable 1.5.0 acceptance is made.
+
+All four native ZIPs, the HTML ZIP and repaired source were verified against the
+same clean build and CI manifest. GitHub and Gitea assets were backed up, replaced,
+downloaded again and checksum-verified before publishing the final download notes.
+The source attached as `repaired-source.tar.gz` matches the repair commit; automatic
+tag source archives retain the original rc.3 source. Original assets and metadata
+are retained locally under `artifacts/releases/v1.5.0-rc.3-repair/`.
+
 ## Portable startup 1.5.0-rc.3 — local candidate, 30 September 2026
 
 The platform build now includes portable Start Viewer entry points and bilingual

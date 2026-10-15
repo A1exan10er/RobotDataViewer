@@ -1,9 +1,9 @@
 # Robot Data Viewer
 
-For recordings and live USB cameras, choose an attached desktop ZIP for your operating system from the [GitHub release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): `windows-x64`, `linux-x64`, `macos-x64` (Intel), or `macos-arm64` (Apple Silicon). Desktop packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required after downloading. Check the release's attached assets and validation notes for availability.
+For recordings and live USB cameras, choose an attached desktop ZIP for your operating system from the [GitHub release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): `windows-x64`, `linux-x64`, `macos-x64` (Intel), or `macos-arm64` (Apple Silicon). Desktop packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required after downloading. All four desktop packages are attached on both hosts and were downloaded again with matching checksums. This remains a pre-release; see the release validation notes.
 
 1. **Extract the entire ZIP** to a folder on your computer.
-2. **Start the viewer:** Windows — double-click **Start Viewer.cmd**; Linux — right-click **Start Viewer.sh → Run as a Program**; macOS — double-click **Start Viewer.command**. Your default browser opens automatically. If it does not, copy the local URL displayed in the launcher window into Chrome, Edge or Firefox.
+2. **Start the viewer:** Windows — double-click **Start Viewer.cmd**; Linux — open **RobotDataViewer**, or right-click **Start Viewer.sh → Run as a Program**; macOS — double-click **Start Viewer.command**. Your default browser opens automatically. If it does not, copy the local URL displayed in the launcher window into Chrome, Edge or Firefox.
 3. Keep the launcher window open. Choose **Recordings** to open a folder/TAR, or **Live cameras → Start all** and allow camera access.
 4. When finished, close the viewer tab to release cameras, then press **Ctrl+C** in the launcher window to stop the service.
 
@@ -15,7 +15,7 @@ The smaller, HTML-only `RobotDataViewer.zip` is still available: double-click **
 
 If **Start all** is disabled, the current page cannot access the browser's camera API; this is not a camera detection result. Open **Start Viewer** (or the Linux **RobotDataViewer** executable) and use its `http://127.0.0.1` address in desktop Chrome, Edge or Firefox. Direct `file:` camera access depends on the browser. A normal remote HTTP page cannot access cameras. If access is denied after Start all, allow it in browser/system camera settings and retry.
 
-Same-version repaired packages identify their source commit and viewer checksum in **BUILD.json**. Use **SHA256SUMS.txt** and **RELEASE-MANIFEST.json** from the release to verify downloads; the attached repaired-source archive corresponds to the repair commit. GitHub/Gitea automatically generated tag source archives remain the original rc.3 source.
+The repaired **v1.5.0-rc.3** build is **b7c47bb8ae06e6e76d0189d205050c7e9199c38a**. Same-version packages identify their source commit and viewer checksum in **BUILD.json**. Use **SHA256SUMS.txt** and **RELEASE-MANIFEST.json** from the release to verify downloads; the attached repaired-source archive corresponds to the repair commit. GitHub/Gitea automatically generated tag source archives remain the original rc.3 source.
 
 In **Recordings**, choose **Open folder** for an original episode folder or a folder containing several recordings, or **Open TAR** for an original episode `.tar` file. Select a recording in the sidebar and press **Play**. RGB and tactile prepare in parallel and start together.
 
@@ -95,3 +95,5 @@ open **Capture settings**, enter **640 / 480 / 30**, choose **Apply → Start**,
 then calibrate. The role and resolution are independent. Use Chrome to request
 the camera's uncropped 640×360 preset; the viewer never silently substitutes
 browser cropping/scaling to make an unsupported request appear successful.
+
+Repair acceptance on Linux Chrome 155 and Firefox 157 confirmed one minute of raw camera capture and camera release through the native launcher. Chrome tactile calibration passed. Firefox required the explicit 640×480/30 Hz override and reported **Sensing region not found**; raw preview remained available. Automated Windows/macOS launcher and synthetic-camera checks passed, while physical-camera acceptance on those platforms remains pending.

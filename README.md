@@ -2,20 +2,15 @@
 
 Open original robot, UMI, and head-camera companion recordings directly. Explore synchronized RGB video, 3D end-effector trajectories, colored tactile response maps, and recorded numeric signals in an English/Chinese dark interface.
 
-**Download:** get `RobotDataViewer.zip` from the [GitHub releases](https://github.com/A1exan10er/RobotDataViewer/releases) or [Gitea releases](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases). Extract the ZIP and double-click `RobotDataViewer/viewer.html`. Keep the included notices and source materials with the viewer when sharing it.
+**Download for live cameras:** choose the native portable ZIP for your computer from the repaired [GitHub v1.5.0-rc.3 release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea v1.5.0-rc.3 release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): Linux x64, Windows x64, macOS Intel (`macos-x64`), or Apple Silicon (`macos-arm64`). All four packages and their checksums were downloaded again and verified after publication.
 
-**Start:** open `viewer.html` from the release package (or `dist/viewer.html` after building from source), then choose **Open folder** or **Open TAR**. Select an episode, a parent folder containing episodes, or an original `.tar` archive. Press Play. No sample preparation, installation, conversion, server, or internet connection is needed.
+**Start:** extract the whole package. Windows: double-click **Start Viewer.cmd**. Linux: open **RobotDataViewer**, or right-click **Start Viewer.sh → Run as a Program**. macOS: double-click **Start Viewer.command**. The bundled service opens your default browser at a local `http://127.0.0.1` address. Keep the launcher window open; close the viewer tab and press Ctrl+C in the launcher when finished. No Python, Node.js, installation or internet connection is needed after download.
 
-**Portable startup (local 1.5.0-rc.3 candidate):** the platform ZIP bundles a
-**Start Viewer** entry point: `Start Viewer.cmd` on Windows,
-`Start Viewer.sh` on Linux, and `Start Viewer.command` on macOS. Extract the
-whole folder and run the entry point; it starts the local service and
-opens your default browser. No Python, Node.js, commands or per-PC shortcut setup
-is required. Windows/macOS use double-click; on Linux, right-click
-`Start Viewer.sh` → **Run as a Program** if double-click opens it as text. Keep the launcher window open; close the
-viewer tab and press Ctrl+C in the launcher when finished. These launchers are
-included in platform packages; the HTML-only ZIP continues to open via `viewer.html`.
-New packages stay local until validated; existing published releases are unchanged.
+Choose **Live cameras → Start all** and allow browser/system camera access, or choose **Recordings → Open folder / Open TAR** to inspect recorded data. A disabled Start all button now explains an insecure context or missing camera API and provides launcher guidance.
+
+**HTML-only option:** `RobotDataViewer.zip` contains `RobotDataViewer/viewer.html` and its runtime, documentation, licenses and source. It has no native launcher. Open `viewer.html` directly for recordings; live-camera access from a local file depends on the browser. Keep the complete package together.
+
+The repaired build is [b7c47bb](https://github.com/A1exan10er/RobotDataViewer/commit/b7c47bb8ae06e6e76d0189d205050c7e9199c38a), still **v1.5.0-rc.3**. Use the attached `repaired-source.tar.gz`, `RELEASE-MANIFEST.json` and `SHA256SUMS.txt` for this build. The unchanged tag and automatically generated Source code archives retain the original rc.3 source. Stable releases and optional NVIDIA add-ons remain available.
 
 [English quick start](docs/QUICKSTART_EN.md) · [中文使用指南](docs/QUICKSTART_ZH.md)
 
@@ -25,13 +20,10 @@ Inspect up to eight USB/UVC cameras before recording: wrist/environment at
 640×480/30 Hz and tactile at 640×360/30 Hz. **Live cameras** provides raw previews,
 stream-health indicators, hot-plug handling, and manually calibrated tactile
 response maps. Camera frames remain local. See [live-camera usage and validation
-limits](docs/LIVE_CAMERAS.md). Physical Windows/Linux acceptance is still required
-before stable 1.5.0; the preserved 1.4.0 release remains available.
+limits](docs/LIVE_CAMERAS.md). Physical-camera acceptance on Windows/macOS and broader multi-camera hardware testing remain required before stable 1.5.0; the preserved 1.4.0 release remains available.
 
-The local 1.5.0-rc.3 candidate includes visible role choices, independent camera names,
-and custom width/height/frame-rate settings, remembered by browser device identity.
-It remains local during acceptance; the published rc.1 download does not include
-these controls. Use the pencil button to name a device and **Capture settings**
+The 1.5.0-rc.3 candidate includes visible role choices, independent camera names,
+and custom width/height/frame-rate settings, remembered by browser device identity. Use the pencil button to name a device and **Capture settings**
 to change its requested parameters. See the quick starts for Firefox and Chrome.
 
 ## Supported data
@@ -81,7 +73,7 @@ npm test
 
 The build embeds the application, styles, decoder, and notices in `dist/viewer.html`. No runtime dependencies are fetched. `vendor/` contains the pinned decoder build; rebuilding it is documented in [vendor/BUILD.md](vendor/BUILD.md). Python and FFmpeg are not required to open recordings or build the frontend.
 
-Create the portable release with `python3 tools/release.py` after a successful build. Distribute `dist/RobotDataViewer.zip` as a complete package; it contains no customer recordings. It includes the viewer, quick starts, licenses, decoder source and rebuild instructions. Keep the source/license materials with copies distributed to customers.
+Create the HTML-only release with `python3 tools/release.py` after a successful build. For the four native packages and verified publication, follow [the release repair procedure](docs/RELEASE_REPAIR.md). Distribute `dist/RobotDataViewer.zip` as a complete package; it contains no customer recordings. It includes the viewer, quick starts, licenses, decoder source and rebuild instructions. Keep the source/license materials with copies distributed to customers.
 
 See [format and interfaces](docs/FORMAT.md) and [validation](docs/VALIDATION.md).
 
