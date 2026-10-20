@@ -2,6 +2,15 @@
 
 Open original robot, UMI, and head-camera companion recordings directly. Explore synchronized RGB video, 3D end-effector trajectories, colored tactile response maps, and recorded numeric signals in an English/Chinese dark interface.
 
+**Stable recorded-data snapshot (2026-10-20):** `stable-recordings-2026-10-20`
+preserves commit `f7dc623` unchanged on `codex/stable-recordings`, on both
+[GitHub](https://github.com/A1exan10er/RobotDataViewer/tree/stable-recordings-2026-10-20)
+and [Gitea](https://git.neoteai.com/yangtianyu/RobotDataViewer/src/tag/stable-recordings-2026-10-20).
+This labels normal recorded-data viewing as stable; live cameras retain their
+experimental acceptance limits. It is a source snapshot, not a renamed or rebuilt
+installer. Further force, tactile, calibration and device-model work is isolated
+on `codex/force-tactile-calibration`; see the [investigation and implementation plan](docs/DEVELOPMENT_PLAN_ZH.md).
+
 **Download for live cameras:** choose the native portable ZIP for your computer from the repaired [GitHub v1.5.0-rc.3 release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea v1.5.0-rc.3 release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): Linux x64, Windows x64, macOS Intel (`macos-x64`), or Apple Silicon (`macos-arm64`). All four packages and their checksums were downloaded again and verified after publication.
 
 **Start:** extract the whole package. Windows: double-click **Start Viewer.cmd**. Linux: open **RobotDataViewer**, or right-click **Start Viewer.sh → Run as a Program**. macOS: double-click **Start Viewer.command**. The bundled service opens your default browser at a local `http://127.0.0.1` address. Keep the launcher window open; close the viewer tab and press Ctrl+C in the launcher when finished. No Python, Node.js, installation or internet connection is needed after download.
