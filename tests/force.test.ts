@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ForceCache, FORCE_MODEL, FORCE_PIPELINE, forceAt, parseForceTracks, serializeForceTracks, videoHash } from '../src/forceTracks.ts';
+import { savedForceKey, BrowserForceStore } from '../src/forceStore.ts';
 const weights='a'.repeat(64),sha='b'.repeat(64);
 function fixture(){return {format:'robot-data-viewer-force',version:1,tracks:[{
   sensor:'l_tact_l',video:{sha256:sha,bytes:123,frames:3,width:641,height:359},model:{id:FORCE_MODEL,weightsSha256:weights,pipeline:FORCE_PIPELINE},
@@ -39,4 +40,14 @@ test('deleting episode force results removes matching memory entries only',()=>{
   cache.remove(sha,t.sensor);
   assert.equal(cache.get(sha,t.sensor,weights),undefined);
   assert.ok(cache.get(sha,'r_tact_r',weights));
+});
+test('persistent identity includes timing, reference, dimensions and pipeline; no storage is a recoverable error',async()=>{
+  const t=parseForceTracks(fixture())[0],key=savedForceKey(t);
+  assert.equal(savedForceKey({...t,time:Array.from(t.time)}),key);
+  for(const changed of [
+    {...t,time:[0,.034,.1]}, {...t,reference:{frame:0 as const,time:.001}},
+    {...t,video:{...t.video,width:640}}, {...t,model:{...t.model,pipeline:'new'}},
+    {...t,video:{...t.video,sha256:'c'.repeat(64)}},
+  ])assert.notEqual(savedForceKey(changed),key);
+  await assert.rejects(new BrowserForceStore().get(t),/unavailable/);
 });

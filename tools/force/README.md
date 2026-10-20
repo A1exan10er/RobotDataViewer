@@ -17,7 +17,10 @@ python tools/force/prepare.py /path/to/folder-or-recording.tar \
 ```
 
 Use `--episode episode_0157_` to restrict a collection and `--sensor r_tact_l`
-to select one sensor. Output paths must be new. Input TAR members are streamed
+to select one sensor. `--provider gpu` requests a numerically validated GPU;
+`--provider cpu` uses CPU only; the default is `auto`. Native GPU dependencies
+are described in [the launcher guide](../../docs/NATIVE_FORCE.md).
+Output paths must be new. Input TAR members are streamed
 to a private temporary video file, never extracted using archive paths. Each
 track must contain the complete decoded frame count; a failed sensor does not
 produce a partial track. Failures are reported and return a nonzero exit status.

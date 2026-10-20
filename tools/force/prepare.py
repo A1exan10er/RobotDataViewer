@@ -31,7 +31,7 @@ def main():
     parser.add_argument('--sensor',choices=list(SENSORS.values()))
     parser.add_argument('--threads',type=int,default=8)
     parser.add_argument('--expected-frames',type=int,help='Total frame count for provider startup-cost selection')
-    parser.add_argument('--provider',default='auto',help='auto, cpu, or an ONNX execution provider')
+    parser.add_argument('--provider',default='auto',help='auto, gpu, cpu, or an ONNX execution provider')
     args=parser.parse_args()
     if args.output.exists():parser.error('Output already exists; select a new output path')
     def progress(p):

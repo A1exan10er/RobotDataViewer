@@ -74,6 +74,7 @@ try{
  await seek(0);
  await evaluate(`{${await readFile(join(root,'vendor/tactile-filter.js'),'utf8')};window.__Filter=TactileFilter;window.__Calibration=TactileCalibration;}`);
  await evaluate('window.__installTactileCheck(window.__Filter)');
+ report.calibration=await evaluate("window.__tactileModels.map(m=>({samples:m.sampleCount,candidates:m.candidateCount}))");
  const check=async()=>{await wait('window.__check().length===4 && window.__check().every(v=>v.errors===0)',10000);const values=await evaluate('window.__check()');assert.ok(values.every(v=>v.errors===0&&v.outside===0&&v.roiStatus==='ready'),JSON.stringify(values));return values;};
  if(process.env.RDV_LIVE){
   await seek(0);
@@ -98,6 +99,7 @@ try{
  await evaluate("{const card=document.querySelector('.tactile-card'),g=card.querySelector('input[type=range]');g.value=10;g.dispatchEvent(new Event('input',{bubbles:true}));card.querySelector('input[type=checkbox]').click();}");await check();
  report.checks.push('Settings changed during a staged seek produce exact current-settings pixels');
  await seek(2000);report.noTouch=await check();
+ if(process.env.RDV_EXPECT_QUIET)assert.ok(report.noTouch.every(v=>v.changed===0),'Known unloaded opening must be exactly black');
  await screenshot('no-touch');report.checks.push('Calibrated opening response matches the shared filter');
  await seek(contactTime);report.contact=await check();assert.ok(report.contact.filter(v=>capping?v.id==='l_tact_r':v.id.startsWith('l_')).every(v=>v.strong>100));
 

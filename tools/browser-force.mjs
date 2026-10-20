@@ -1,7 +1,8 @@
 // Isolated Chrome/CDP test. No existing browser session or user profile is read.
 // Usage: RDV_FOLDER=/path/to/recording RDV_PANELS=7 node tools/browser-force.mjs
 // RDV_IMPORT, RDV_TAR, RDV_SOFTWARE, RDV_COMPAT, RDV_REFERENCE,
-// RDV_FAILURE, RDV_CANCEL and RDV_PREP_CONTROLS select validation cases.
+// RDV_FAILURE, RDV_CANCEL, RDV_PREP_CONTROLS, RDV_PERSISTENCE and
+// RDV_STORAGE_FAILURE select validation cases.
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -92,6 +93,10 @@ try{
  const openTime=Date.now();await cdp('DOM.setFileInputFiles',{nodeId:node.nodeId,files:[folder]});await wait(ready,45000);report.startupMs=Date.now()-openTime;
  assert.ok(await evaluate("!document.querySelector('.force-toolbar input[type=checkbox]').checked && !performance.getEntriesByType('resource').some(r=>r.name.includes('force-runtime'))"));
  const workers=await evaluate('window.__forceWorkers');
+ if(process.env.RDV_STORAGE_FAILURE)await evaluate(`{
+   const put=IDBObjectStore.prototype.put;
+   IDBObjectStore.prototype.put=function(...args){if(this.name==='tracks')throw new DOMException('Injected full storage','QuotaExceededError');return put.apply(this,args);};
+ }`);
  if(process.env.RDV_FAILURE)await evaluate('window.__failForce=true');
  if(process.env.RDV_IMPORT){
   const input=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'.force-toolbar input[type=file]'});await cdp('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[resolve(process.env.RDV_IMPORT)]});await delay(150);
@@ -120,6 +125,36 @@ try{
  const before=await evaluate("[...document.querySelectorAll('.force-values')].map(x=>x.textContent)");await evaluate("{const s=document.querySelector('.tactile-card input[type=range]');s.value=16;s.dispatchEvent(new Event('input',{bubbles:true}));}");await delay(200);assert.deepEqual(await evaluate("[...document.querySelectorAll('.force-values')].map(x=>x.textContent)"),before);
  await click('.play-button');await delay(400);assert.ok(await evaluate("Number(document.querySelector('.timeline').value)>60"));
  await click('.force-toolbar input[type=checkbox]');await delay(50);await click('.force-toolbar input[type=checkbox]');await wait("!document.querySelector('.force-progress')",15000);assert.equal(await evaluate('window.__forcePosts.length'),state.posts,'Cached return must perform no new inference');
+ if(process.env.RDV_STORAGE_FAILURE){
+  assert.ok(await evaluate("document.body.innerText.includes('could not be saved')"),'Unsaved result must have an explicit warning');
+  assert.equal(await evaluate("document.querySelectorAll('.force-readout svg').length"),4);
+  report.checks.push('Quota failure preserves playback and visibly reports that results were not saved');
+ }
+ if(process.env.RDV_PERSISTENCE){
+  const reopen=async()=>{
+   await cdp('Page.reload',{ignoreCache:true});await wait("!!document.querySelector('.open-main')");
+   const doc=await cdp('DOM.getDocument'),node=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'input[webkitdirectory]'});
+   await cdp('DOM.setFileInputFiles',{nodeId:node.nodeId,files:[folder]});await wait(ready,45000);
+   assert.equal(await evaluate('window.__forcePosts.length'),0);
+   const start=Date.now();await click('.force-toolbar input[type=checkbox]');
+   await wait("!document.querySelector('.force-progress') && document.querySelectorAll('.force-readout svg').length===4",120000);
+   return Date.now()-start;
+  };
+  report.savedReloadMs=await reopen();
+  assert.equal(await evaluate('window.__forcePosts.length'),0,'Reopening must perform no inference');
+  assert.ok(await evaluate("!performance.getEntriesByType('resource').some(r=>r.name.includes('force-runtime'))"),'Cached reopen must not load model assets');
+  assert.ok(await evaluate("document.querySelector('.force-ready').textContent.includes('4/4')"));
+  await evaluate(`new Promise((resolve,reject)=>{
+   const open=indexedDB.open('robot-data-viewer-force',1);open.onerror=()=>reject(open.error);
+   open.onsuccess=()=>{const db=open.result,tx=db.transaction('tracks','readwrite'),store=tx.objectStore('tracks'),read=store.openCursor();
+    read.onsuccess=()=>{const cursor=read.result;if(!cursor){reject(new Error('No persisted track'));return;}cursor.update({...cursor.value,body:'corrupt'});};
+    tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);
+   };
+  })`);
+  report.corruptReloadMs=await reopen();
+  assert.equal(await evaluate('window.__forcePosts.length'),1,'Only the corrupt sensor should be recalculated');
+  report.checks.push('Reload reuses all four persisted tracks without loading model assets; corrupt saved sensor alone is repaired');
+ }
  assert.equal(requests.length,0);assert.equal(errors.length,0,JSON.stringify(errors));report.checks.push('Opt-in only; full preparation pauses clock; complete successful tracks; source-frame values; settings independent; cache; workers released; offline; expanded Chinese');
 }catch(error){report.failure=String(error.stack||error);await screenshot('failure').catch(()=>{});throw error;}
 finally{clearInterval(memoryTimer);report.peakBrowserRssMiB=peakRssKiB/1024;report.hostAfter=await host();await writeFile(join(output,'results.json'),JSON.stringify(report,null,2));await cdp('Browser.close',{},true).catch(()=>{});await delay(500);if(chrome.exitCode===null)chrome.kill('SIGKILL');await rm(profile,{recursive:true,force:true}).catch(()=>{});}

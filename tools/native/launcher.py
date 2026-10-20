@@ -23,7 +23,7 @@ FROZEN=bool(getattr(sys,'frozen',False))
 ROOT=Path(sys.executable).resolve().parent if FROZEN else HERE.parents[1]
 if FROZEN:os.environ.setdefault('RDV_FFMPEG_DIR',str(ROOT/'ffmpeg'))
 sys.path.insert(0,str(HERE));sys.path.insert(0,str(ROOT/'tools/force'))
-from cache import TrackCache, SENSORS, identity
+from cache import TrackCache, SENSORS, identity, validate
 
 
 def cache_home():
@@ -32,10 +32,20 @@ def cache_home():
     else:base=Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))
     return base/'RobotDataViewer/force-v1'
 
+def results_home():
+    if sys.platform=='win32':base=Path(os.environ.get('LOCALAPPDATA',Path.home()))
+    elif sys.platform=='darwin':base=Path.home()/'Library/Application Support'
+    else:base=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))
+    return base/'RobotDataViewer/force-prepared-v1'
+
 class Application:
     def __init__(self,web,model,storage,provider='auto'):
         self.web=Path(web);self.model=Path(model);self.token=secrets.token_urlsafe(32);self.cache=TrackCache(Path(storage)/'tracks')
         self.manifest=json.loads((self.model/'model.json').read_text());self.provider=provider
+        self.migration_pending=False
+        if Path(storage)==results_home():
+            try:self.cache.migrate_from(cache_home()/'tracks')
+            except OSError:self.migration_pending=True
         self.jobs={};self.lock=threading.RLock();self.active=None
         self.work=Path(storage)/'temporary';self.work.mkdir(parents=True,exist_ok=True)
         # Only our marked abandoned launch directories. Never scan user recordings.
@@ -62,7 +72,10 @@ class Application:
         if len(v['sha256'])!=64 or any(c not in '0123456789abcdef' for c in v['sha256']):raise ValueError('Invalid video checksum')
         if item['reference']!={'frame':0,'time':times[0]} or times[0]<0 or any(b<=a for a,b in zip(times,times[1:])):raise ValueError('Invalid timing')
         json.dumps(identity(item),allow_nan=False)
-    def create(self,items):
+    def create(self,items,provider=None):
+        provider=provider or self.provider
+        if provider not in ('auto','cpu','gpu','CUDAExecutionProvider','DmlExecutionProvider','CoreMLExecutionProvider'):
+            raise ValueError('Invalid inference backend')
         if not 0<len(items)<=4:raise ValueError('Select one to four tactile videos')
         for item in items:self.check(item)
         with self.lock:
@@ -71,7 +84,7 @@ class Application:
             name=secrets.token_hex(16);directory=self.temp/name;directory.mkdir()
             (directory/'request.json').write_text(json.dumps(items,allow_nan=False))
             job={'id':name,'items':items,'directory':directory,'state':'uploading','updated':time.monotonic(),'offsets':[0]*len(items),
-                'tracks':[],'errors':{},'progress':None,'diagnostics':[],'transfer':0.,'process':None,'cancelled':False,'hashes':[hashlib.sha256() for _ in items],'lock':threading.RLock()}
+                'tracks':[],'errors':{},'savedSensors':[],'storageErrors':{},'provider':provider,'progress':None,'diagnostics':[],'transfer':0.,'process':None,'cancelled':False,'hashes':[hashlib.sha256() for _ in items],'lock':threading.RLock()}
             self.jobs[name]=job;self.active=name
             threading.Thread(target=self.watchdog,args=(job,),daemon=True).start()
             return job
@@ -96,9 +109,11 @@ class Application:
         with job['lock']:
             if job['cancelled'] or job['state']!='uploading' or any(n!=item['video']['bytes'] for n,item in zip(job['offsets'],job['items'])):raise ValueError('Uploads are incomplete')
             addon=ROOT/'nvidia'/('RobotDataViewerEngine.exe' if os.name=='nt' else 'RobotDataViewerEngine')
-            args=[str(addon) if FROZEN and addon.is_file() else sys.executable]
+            args=[str(addon) if FROZEN and addon.is_file() and job['provider']!='cpu' else sys.executable]
             if not FROZEN:args.append(str(HERE/'launcher.py'))
-            args+=['--worker',str(job['directory']),'--model',str(self.model),'--provider',self.provider]
+            # Existing NVIDIA add-ons understand the provider name, not the new UI alias.
+            provider='CUDAExecutionProvider' if FROZEN and addon.is_file() and job['provider']=='gpu' else job['provider']
+            args+=['--worker',str(job['directory']),'--model',str(self.model),'--provider',provider]
             with (job['directory']/'error.log').open('wb') as error_log:
                 job['process']=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=error_log,text=True,env={**os.environ,'RDV_FORCE_PARENT_PID':str(os.getpid())})
             job['state']='calculating'
@@ -123,8 +138,10 @@ class Application:
                     if 'complete' in event:
                         track=json.loads((job['directory']/f"{event['complete']}.json").read_text())
                         job['tracks'].append(track);job['diagnostics'].append(event['diagnostics'])
-                        try:self.cache.put(track)
-                        except OSError as error:event['diagnostics']['cacheError']=str(error)
+                        try:self.cache.put(track);job['savedSensors'].append(track['sensor'])
+                        except OSError as error:
+                            event['diagnostics']['cacheError']=str(error)
+                            job['storageErrors'][track['sensor']]='Result could not be saved; export to retain it'
             code=job['process'].wait()
             with job['lock']:
                 if not job['cancelled']:
@@ -172,7 +189,15 @@ class Handler(BaseHTTPRequestHandler):
                 if self.command!='GET' or not name:self.reply(404,{'error':'Not found'});return
                 self.reply(200,(self.app.web/name).read_bytes(),'text/html; charset=utf-8' if name.endswith('html') else 'text/javascript');return
             if path=='/api/v1/capabilities' and self.command=='GET':
-                self.reply(200,{'version':1,'native':True,'storage':self.app.cache.usage(),'model':self.app.manifest});return
+                self.reply(200,{'version':1,'native':True,'storage':self.app.cache.usage(),'model':self.app.manifest,'migrationPending':self.app.migration_pending});return
+            if path=='/api/v1/cache' and self.command=='PUT':
+                pack=self.body()
+                if pack.get('format')!='robot-data-viewer-force' or pack.get('version')!=1:raise ValueError('Invalid force file')
+                tracks=pack['tracks']
+                if not 0<len(tracks)<=4:raise ValueError('Too many sensors')
+                for track in tracks:self.app.check(track);validate(track)
+                for track in tracks:self.app.cache.put(track)
+                self.reply(200,self.app.cache.usage());return
             if path=='/api/v1/cache' and self.command=='POST':
                 items=self.body()['items']
                 if len(items)>4:raise ValueError('Too many sensors')
@@ -186,14 +211,14 @@ class Handler(BaseHTTPRequestHandler):
                 if self.app.active:raise ValueError('Cancel force preparation before deleting saved results')
                 self.reply(200,self.app.cache.delete(items));return
             if path=='/api/v1/jobs' and self.command=='POST':
-                self.reply(200,{'id':self.app.create(self.body()['items'])['id']});return
+                body=self.body();self.reply(200,{'id':self.app.create(body['items'],body.get('provider'))['id']});return
             parts=path.split('/')
             if len(parts)<5 or parts[1:4]!=['api','v1','jobs']:self.reply(404,{'error':'Unknown endpoint'});return
             job=self.app.jobs.get(parts[4])
             if job is None:self.reply(404,{'error':'Unknown job'});return
             if len(parts)==5 and self.command=='DELETE':self.app.cancel(job);self.reply(200,{'cancelled':True});return
             if len(parts)==5 and self.command=='GET':
-                with job['lock']:self.reply(200,{k:job[k] for k in ('state','progress','tracks','errors','diagnostics','transfer')})
+                with job['lock']:self.reply(200,{k:job[k] for k in ('state','progress','tracks','errors','diagnostics','transfer','savedSensors','storageErrors')})
                 return
             if len(parts)==6 and parts[5]=='start' and self.command=='POST':self.body();self.app.start(job);self.reply(200,{'started':True});return
             if len(parts)==7 and parts[5]=='video' and self.command=='PUT':
@@ -218,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--web',type=Path,default=ROOT if FROZEN else ROOT/'dist');parser.add_argument('--model',type=Path,default=ROOT/'model' if FROZEN else ROOT/'vendor/force')
-    parser.add_argument('--storage',type=Path,default=cache_home());parser.add_argument('--no-browser',action='store_true');parser.add_argument('--worker',type=Path)
+    parser.add_argument('--storage',type=Path,default=results_home());parser.add_argument('--no-browser',action='store_true');parser.add_argument('--worker',type=Path)
     parser.add_argument('--provider',default='auto');args=parser.parse_args()
     if args.worker:
         from worker import run

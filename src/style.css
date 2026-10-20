@@ -1457,6 +1457,8 @@ small {
 .force-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; }
 .force-toolbar label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; margin-right:auto; }
 .force-toolbar input[type=checkbox] { accent-color:#7bceba; width:16px; height:16px; }
+.force-toolbar .force-backend { margin-right:0; font-size:12px; }
+.force-backend select { background:#17212a; color:#d9e4eb; border:1px solid #34414e; padding:5px 8px; border-radius:5px; }
 .force-progress { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid #344449; border-radius:8px; margin-bottom:14px; font-size:13px; background:#142321; }
 .force-progress span { flex:1; }.force-progress small { display:block; color:#a7b9b3; margin-top:4px; }.force-ready { color:#9cccbc; font-size:12px; }
 .force-readout { border-top:1px solid var(--border,#29333e); padding:9px 12px 5px; background:#10151c; }

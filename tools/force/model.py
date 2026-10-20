@@ -45,8 +45,10 @@ class Preprocessor:
         return self.cv.resize(self.clahe.apply(gray), (224, 126), interpolation=self.cv.INTER_AREA)
 
     def __call__(self, bgr):
+        return self.from_gray(self.gray(bgr))
+
+    def from_gray(self, current):
         import numpy as np
-        current = self.gray(bgr)
         small_flow = self.algo.calc(self.small_reference, self.small(current), None)
         flow = self.cv.resize(small_flow, (640, 360), interpolation=self.cv.INTER_LINEAR).astype(np.float32) * (1.0 / 0.35)
         reference = self.reference.astype(np.float32)

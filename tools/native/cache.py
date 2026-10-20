@@ -1,4 +1,4 @@
-"""Atomic, content-addressed LRU for completed version-1 force tracks only."""
+"""Atomic completed-force storage; persistent by default, optionally bounded."""
 from contextlib import contextmanager
 import hashlib
 import json
@@ -10,6 +10,7 @@ import time
 
 FORMAT='robot-data-viewer-force'
 LIMIT=256*1024*1024
+MAX_TRACK_BYTES=64*1024*1024
 SENSORS=('l_tact_l','l_tact_r','r_tact_l','r_tact_r')
 
 def identity(track):
@@ -31,7 +32,7 @@ def validate(track):
     key(track)
 
 class TrackCache:
-    def __init__(self,root,limit=LIMIT):
+    def __init__(self,root,limit=None):
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True);self.limit=limit;self.lock=threading.RLock();self.depth=0
         with self.guard():
             for path in self.root.glob('*.part'):path.unlink(missing_ok=True)
@@ -57,8 +58,9 @@ class TrackCache:
     def _files(self):return list(self.root.glob('*.json'))
     def usage(self):
         with self.guard():
-            files=self._files();return {'bytes':sum(p.stat().st_size for p in files),'limit':self.limit,'tracks':len(files)}
+            files=self._files();return {'bytes':sum(p.stat().st_size for p in files),'limit':self.limit,'tracks':len(files),'retention':'persistent' if self.limit is None else 'lru'}
     def _evict(self):
+        if self.limit is None:return
         files=sorted(self._files(),key=lambda p:p.stat().st_mtime_ns);size=sum(p.stat().st_size for p in files)
         for path in files:
             if size<=self.limit:break
@@ -67,7 +69,7 @@ class TrackCache:
         with self.guard():
             path=self.root/(key(request)+'.json')
             try:
-                if path.stat().st_size>self.limit:raise ValueError('Oversized track')
+                if path.stat().st_size>MAX_TRACK_BYTES:raise ValueError('Oversized track')
                 track=json.loads(path.read_text());validate(track)
                 if identity(track)!=identity(request):raise ValueError('Mismatched track')
                 os.utime(path,None);return track
@@ -75,14 +77,30 @@ class TrackCache:
                 path.unlink(missing_ok=True);return None
     def put(self,track):
         validate(track);body=json.dumps(track,separators=(',',':'),allow_nan=False).encode()
-        if len(body)>self.limit:return
+        if len(body)>MAX_TRACK_BYTES or (self.limit is not None and len(body)>self.limit):
+            raise OSError('Force track exceeds the result storage limit')
         with self.guard():
             path=self.root/(key(track)+'.json');temp=path.with_suffix('.part')
             try:
                 with temp.open('wb') as stream:stream.write(body);stream.flush();os.fsync(stream.fileno())
                 os.replace(temp,path);self._evict()
             finally:temp.unlink(missing_ok=True)
+    def migrate_from(self,root):
+        """Copy validated legacy results once, without modifying stable-version data."""
+        marker=self.root/'.legacy-migrated'
+        with self.guard():
+            if marker.exists() or Path(root).resolve()==self.root.resolve():return
+            for path in Path(root).glob('*.json'):
+                try:
+                    if path.stat().st_size>MAX_TRACK_BYTES:continue
+                    track=json.loads(path.read_text());validate(track)
+                    if path.stem!=key(track):continue
+                except (ValueError,KeyError,TypeError):continue
+                if not (self.root/path.name).exists():self.put(track)
+            marker.touch()
     def delete(self,requests=None):
         with self.guard():
+            # Explicit removal must never be undone by a later legacy migration.
+            (self.root/'.legacy-migrated').touch()
             for path in self._files() if requests is None else [self.root/(key(r)+'.json') for r in requests]:path.unlink(missing_ok=True)
             return self.usage()

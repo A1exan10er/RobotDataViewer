@@ -4,7 +4,7 @@ import type { RegionGeometry } from './tactileRoi';
 export const cloneBaseline=(model:TactileBaseline):TactileBaseline=>({...model,baseline:model.baseline.slice(),noiseFloor:model.noiseFloor.slice(),roiMask:model.roiMask.slice(),roiCurve:model.roiCurve?.slice()});
 const cloneGeometry=(g:RegionGeometry):RegionGeometry=>({...g,curve:g.curve.slice(),rim:g.rim.slice()});
 // Includes broader detection, checked donor geometry and per-episode provenance.
-export const calibrationKey=(path:string,fps:number,frames:number)=>`median-p99-roi-v3:${path}:${fps}:${frames}`;
+export const calibrationKey=(path:string,fps:number,frames:number)=>`quiet-prefix-median-p99-roi-v4:${path}:${fps}:${frames}`;
 type Entry={model?:TactileBaseline;geometry?:RegionGeometry;bytes:number};
 /** Completed models and compact donor geometry share one bounded LRU. No media retained. */
 export class TactileCache {

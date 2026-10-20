@@ -19,6 +19,7 @@ class ForcePreprocessingTests(unittest.TestCase):
         np.testing.assert_array_equal(first,0)
         a=processor(current);processor(reference);b=processor(current)
         np.testing.assert_array_equal(a,b)
+        np.testing.assert_array_equal(a,processor.from_gray(processor.gray(current)))
         np.testing.assert_array_equal(reference,original);np.testing.assert_array_equal(current,copy)
 
     def test_relative_difference_uses_signed_gray_and_numpy_rounding(self):

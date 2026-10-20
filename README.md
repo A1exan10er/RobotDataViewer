@@ -11,6 +11,12 @@ experimental acceptance limits. It is a source snapshot, not a renamed or rebuil
 installer. Further force, tactile, calibration and device-model work is isolated
 on `codex/force-tactile-calibration`; see the [investigation and implementation plan](docs/DEVELOPMENT_PLAN_ZH.md).
 
+**Development build — 1.6.0-dev.1:** automatic saved-force reuse in both the
+native launcher and HTML viewer, selectable compute backend, faster CUDA frame
+preparation, and opening-period tactile noise cleanup. See
+[development usage and validation](docs/DEVELOPMENT_BUILD_ZH.md).
+The downloads below remain the previous published versions.
+
 **Download for live cameras:** choose the native portable ZIP for your computer from the repaired [GitHub v1.5.0-rc.3 release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea v1.5.0-rc.3 release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): Linux x64, Windows x64, macOS Intel (`macos-x64`), or Apple Silicon (`macos-arm64`). All four packages and their checksums were downloaded again and verified after publication.
 
 **Start:** extract the whole package. Windows: double-click **Start Viewer.cmd**. Linux: open **RobotDataViewer**, or right-click **Start Viewer.sh → Run as a Program**. macOS: double-click **Start Viewer.command**. The bundled service opens your default browser at a local `http://127.0.0.1` address. Keep the launcher window open; close the viewer tab and press Ctrl+C in the launcher when finished. No Python, Node.js, installation or internet connection is needed after download.
@@ -47,6 +53,11 @@ Originals are read-only. Available channels can be inspected even when others ar
 
 Existing version 1 prepared sample folders remain supported. ZIP and compressed TAR inputs are not supported by the direct archive reader.
 
+The development build stops opening-period noise sampling before sustained image
+changes and removes tiny isolated responses before smoothing. Start each episode
+unloaded; the first eight frames are still assumed to be a valid reference.
+The baseline remains fixed during playback, preserving sustained contact.
+
 ## Optional force estimates
 
 Turn on **Show estimated force** to view per-sensor normal force **Fz** and
@@ -63,6 +74,14 @@ tracks**, or open a folder/TAR containing a `*.rdv-force.json` file, and enable
 force without recalculation. Original recordings are never modified. Authors
 can also [prepare tracks with Python](tools/force/README.md). Keep the complete
 portable ZIP, including `force-runtime.js`, for optional browser calculation.
+
+In the development build, completed tracks are saved automatically. Reopening
+the same recording checks saved results before loading any model. The native
+launcher retains them until explicit removal; HTML uses browser-managed IndexedDB,
+which may be cleared or evicted. The interface shows how many tracks were saved
+and reused, the actual compute backend, and any save failure. Exported files
+remain the portable backup. **Automatic / Prefer GPU / CPU** affects only new
+calculations; already saved tracks are reused regardless of that choice.
 
 These are model estimates relative to each video's first frame, not calibrated
 force measurements. Existing contact and model bias may produce nonzero values

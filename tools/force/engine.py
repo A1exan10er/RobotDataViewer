@@ -59,12 +59,16 @@ class Engine:
         self.session=None;self.backend='CPUExecutionProvider';self.fallback=[];self.selection=[]
         self.init_seconds=0;self.progress=progress
         self._choose(provider,total_frames)
+        # GPU inference leaves physical CPU cores available for exact DeepFlow.
+        # Keep a bounded queue rather than buffering a full decoded episode.
+        if self.backend!='CPUExecutionProvider':self.prep_threads=min(4,max(1,cores-2))
         self.init_seconds=time.perf_counter()-started
 
     def _session(self, provider):
         # Release the previous full model before constructing another provider.
         self.session=None;gc.collect()
-        options=ort.SessionOptions();options.intra_op_num_threads=self.threads;options.inter_op_num_threads=1
+        options=ort.SessionOptions();options.intra_op_num_threads=min(self.threads,max(1,cpu_budget()-self.prep_threads-1));options.inter_op_num_threads=1
+        self.inference_threads=options.intra_op_num_threads
         options.execution_mode=ort.ExecutionMode.ORT_SEQUENTIAL
         options.graph_optimization_level=ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         options.add_session_config_entry('session.intra_op.allow_spinning','0')
@@ -100,7 +104,7 @@ class Engine:
         if requested=='cpu':return
         if requested=='auto' and total_frames is not None and total_frames*cpu['secondsPerFrame']<5:
             self.fallback.append('Short job: CPU estimate below GPU startup allowance (5 seconds)');return
-        if requested!='auto':candidates=[requested]
+        if requested not in ('auto','gpu'):candidates=[requested]
         if not candidates:self.fallback.append('No native GPU provider installed');return
         for provider in candidates:
             try:
@@ -133,7 +137,7 @@ class Engine:
             # Compare complete processed images, never approximate pixels or flow.
             key=gray.tobytes()
             with memo_lock:cached=memo.get(key)
-            x=None if cached is not None else processor(frame)
+            x=None if cached is not None else processor.from_gray(gray)
             return key,x,time.perf_counter()-start,cached
         try:
             reference=read()
@@ -177,7 +181,7 @@ class Engine:
             process.stdout.close()
             if process.poll() is None:process.kill();process.wait()
             for future in queue:future.cancel()
-        stats.update(seconds=time.perf_counter()-started,backend=self.backend,fallback=self.fallback,threads=self.threads,selection=self.selection)
+        stats.update(seconds=time.perf_counter()-started,backend=self.backend,fallback=self.fallback,threads=getattr(self,'inference_threads',self.threads),preprocessingThreads=self.prep_threads,selection=self.selection)
         track={'sensor':sensor,'video':{'sha256':checksum(path),'bytes':Path(path).stat().st_size,'frames':len(pts),'width':width,'height':height},
             'model':{'id':MODEL_ID,'weightsSha256':self.manifest['weightsSha256'],'pipeline':PIPELINE},
             'reference':{'frame':0,'time':pts[0]},'unit':'N','time':pts,'shear':shear,'fz':normal,'valid':[1]*len(pts)}

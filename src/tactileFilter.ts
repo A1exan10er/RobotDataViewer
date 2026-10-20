@@ -1,8 +1,8 @@
 import { detectTactileRegion, borrowTactileRegion, regionGeometry, type RegionGeometry, type RegionMethod } from './tactileRoi.ts';
 
-/** Fixed, calibrated image response. No contact inference or temporal adaptation. */
+/** Fixed image reference from the opening unloaded period; never adapts during playback. */
 export type TactileBaseline = {
-  width: number; height: number; sampleCount: number;
+  width: number; height: number; sampleCount: number; candidateCount?:number;
   baseline: Uint8Array; noiseFloor: Float32Array;
   roiMask: Uint8Array; roiStatus: 'ready' | 'not-found'; roiConfidence: number;
   roiCurve?: Float32Array; roiMethod?: RegionMethod; roiDonor?: string;
@@ -55,9 +55,42 @@ export class TactileCalibration {
     if (gray.length !== this.width * this.height) throw new Error('Frame dimensions differ');
     this.frames.push(gray.slice());
   }
+  private quietPrefix():Uint8Array[] {
+    const frames=this.frames;
+    // Eight opening frames are assumed unloaded. A persistent, coherent image
+    // change later in the two-second window ends calibration before that change.
+    // This is a conservative image heuristic, not a physical contact classifier.
+    if(frames.length<=8||this.width<16||this.height<16)return frames;
+    const columns=Math.ceil(this.width/8),rows=Math.ceil(this.height/8),count=columns*rows;
+    const anchor=new Uint8Array(this.width*this.height),values=new Uint8Array(8);
+    for(let p=0;p<anchor.length;p++){
+      for(let i=0;i<8;i++)values[i]=frames[i][p];
+      values.sort();anchor[p]=Math.floor((values[3]+values[4])/2);
+    }
+    const limits=new Float32Array(count),scores=new Float32Array(count),sizes=new Uint8Array(count);
+    for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++)sizes[Math.floor(y/8)*columns+Math.floor(x/8)]++;
+    let previous=-1;
+    for(let i=0;i<frames.length;i++){
+      scores.fill(0);
+      for(let y=0;y<this.height;y++)for(let x=0;x<this.width;x++)
+        scores[Math.floor(y/8)*columns+Math.floor(x/8)]+=Math.abs(frames[i][y*this.width+x]-anchor[y*this.width+x]);
+      let changed=0;
+      for(let b=0;b<count;b++){
+        const value=scores[b]/sizes[b];
+        if(i<8)limits[b]=Math.max(limits[b],value);
+        else if(value>limits[b]+4)changed++;
+      }
+      if(i<8)continue;
+      if(changed>=Math.max(4,Math.ceil(count*.002))){
+        if(previous===i-1)return frames.slice(0,previous);
+        previous=i;
+      }else previous=-1;
+    }
+    return frames;
+  }
   finish(measure?: (stage: 'statistics' | 'region', milliseconds: number) => void): TactileBaseline {
     const started = performance.now();
-    const frames = this.frames, n = frames.length;
+    const candidateCount=this.frames.length,frames = this.quietPrefix(), n = frames.length;
     if (!n) throw new Error('No baseline frames');
     const baseline = new Uint8Array(this.width * this.height), noiseFloor = new Float32Array(baseline.length);
     const histogram = new Uint32Array(256);
@@ -87,7 +120,7 @@ export class TactileCalibration {
     measure?.('statistics', regionStarted - started);
     const region = detectTactileRegion(baseline, this.width, this.height);
     measure?.('region', performance.now() - regionStarted);
-    return { width: this.width, height: this.height, sampleCount: n, baseline, noiseFloor,
+    return { width: this.width, height: this.height, sampleCount: n, candidateCount, baseline, noiseFloor,
       roiMask: region.mask, roiStatus: region.status, roiConfidence: region.confidence, roiCurve: region.curve, roiMethod: region.method };
   }
   clear(): void { this.frames = []; }
@@ -131,7 +164,10 @@ export class TactileFilter {
   private readonly smooth: Float32Array;
   private readonly xIndices: Int32Array;
   private readonly yIndices: Int32Array;
-  constructor(model: TactileBaseline) {
+  private readonly visited: Uint8Array;
+  private readonly component: Int32Array;
+  private readonly minComponent: number;
+  constructor(model: TactileBaseline, options: {spatialCleanup?:boolean} = {}) {
     const { width, height, baseline, noiseFloor, sampleCount, roiMask, roiStatus, roiConfidence } = model;
     const size = width * height;
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || !Number.isInteger(sampleCount) || sampleCount < 1 || baseline.length !== size || noiseFloor.length !== size || roiMask?.length !== size || !['ready', 'not-found'].includes(roiStatus) || !Number.isFinite(roiConfidence))
@@ -141,6 +177,29 @@ export class TactileFilter {
     this.horizontal = new Float32Array(size); this.smooth = new Float32Array(size);
     this.xIndices = Int32Array.from({ length: width * 17 }, (_, i) => reflect101(Math.floor(i / 17) + i % 17 - 8, width));
     this.yIndices = Int32Array.from({ length: height * 17 }, (_, i) => reflect101(Math.floor(i / 17) + i % 17 - 8, height) * width);
+    const sensingPixels=roiMask.reduce((sum,pixel)=>sum+Number(!!pixel),0);
+    this.minComponent=options.spatialCleanup===false||sensingPixels<9?1:Math.max(3,Math.min(8,Math.round(sensingPixels/50000)));
+    this.visited=new Uint8Array(size);this.component=new Int32Array(size);
+  }
+  private suppressSpeckles(){
+    if(this.minComponent<=1)return;
+    const {width,height}=this.model,{cleaned,visited,component}=this;
+    visited.fill(0);
+    // Remove tiny noise islands BEFORE Gaussian smoothing spreads them out.
+    // No temporal state: static contact and random seeks produce identical pixels.
+    for(let start=0;start<cleaned.length;start++){
+      if(visited[start]||cleaned[start]<=0)continue;
+      let count=1;component[0]=start;visited[start]=1;
+      for(let next=0;next<count;next++){
+        const p=component[next],x=p%width,y=Math.floor(p/width);
+        for(let yy=Math.max(0,y-1);yy<=Math.min(height-1,y+1);yy++)
+          for(let xx=Math.max(0,x-1);xx<=Math.min(width-1,x+1);xx++){
+            const q=yy*width+xx;
+            if(!visited[q]&&cleaned[q]>0){visited[q]=1;component[count++]=q;}
+          }
+      }
+      if(count<this.minComponent)for(let i=0;i<count;i++)cleaned[component[i]]=0;
+    }
   }
   render(current: Uint8ClampedArray, output: Uint8ClampedArray, gain = 10, cleanup = true): void {
     if (current.length !== this.gray.length * 4) throw new Error('Frame dimensions differ');
@@ -158,6 +217,7 @@ export class TactileFilter {
       cleaned[p] = roiMask[p] ? (cleanup ? Math.max(Math.fround(delta - noiseFloor[p]) - 2, 0) : delta) : 0;
     }
     if (cleanup) {
+      this.suppressSpeckles();
       for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
         const row = y * width, indices = x * 17;
         let sum = cleaned[row + x] * GAUSSIAN[8];

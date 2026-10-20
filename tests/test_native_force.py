@@ -11,7 +11,7 @@ import urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools/native'))
-from cache import TrackCache,identity
+from cache import TrackCache,identity,key
 from launcher import Application, Handler, ThreadingHTTPServer
 
 
@@ -22,6 +22,36 @@ def fixture():
         'reference':{'frame':0,'time':0},'unit':'N','time':[0,.1],'shear':[.17,2.], 'fz':[.27,3.],'valid':[1,1]}
 
 class CacheTests(unittest.TestCase):
+    def test_persistent_library_and_read_only_legacy_migration(self):
+        with tempfile.TemporaryDirectory() as root:
+            legacy=Path(root)/'legacy';old=TrackCache(legacy,1600);track=fixture();old.put(track)
+            original=(legacy/(key(track)+'.json')).read_bytes()
+            library=TrackCache(Path(root)/'library');library.migrate_from(legacy)
+            self.assertEqual(library.get(track),track)
+            for i in range(12):
+                other=copy.deepcopy(track);other['video']['sha256']=f'{i:064x}';library.put(other)
+            restarted=TrackCache(library.root)
+            self.assertIsNone(restarted.usage()['limit'])
+            self.assertEqual(restarted.usage()['tracks'],13)
+            self.assertEqual((legacy/(key(track)+'.json')).read_bytes(),original)
+            restarted.delete([track]);restarted.migrate_from(legacy)
+            self.assertIsNone(restarted.get(track))  # Explicit deletion never resurrects legacy data.
+
+    def test_failed_atomic_save_preserves_previous_result(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            track=fixture();cache=TrackCache(root);cache.put(track)
+            updated=copy.deepcopy(track);updated['fz'][1]=4
+            with patch('cache.os.replace',side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):cache.put(updated)
+            self.assertEqual(cache.get(track),track)
+            self.assertEqual(list(Path(root).glob('*.part')),[])
+    def test_corrupt_result_is_discarded_for_recalculation(self):
+        with tempfile.TemporaryDirectory() as root:
+            track=fixture();cache=TrackCache(root);cache.put(track)
+            path=Path(root)/(key(track)+'.json')
+            path.write_text('{incomplete')
+            self.assertIsNone(cache.get(track));self.assertFalse(path.exists())
     def test_restart_identity_and_deletion(self):
         with tempfile.TemporaryDirectory() as root:
             t=fixture();cache=TrackCache(root);cache.put(t)
@@ -96,6 +126,35 @@ class HelperTests(unittest.TestCase):
         t=fixture();self.app.cache.put(t)
         self.assertEqual(len(self.call('/api/v1/cache','POST',{'items':[identity(t)]})['tracks']),1)
         self.assertEqual(self.call('/api/v1/cache','DELETE',{'items':[identity(t)]})['bytes'],0)
+        self.assertIsNone(self.app.active)
+    def test_imported_tracks_are_saved_without_model_and_bad_identity_is_rejected(self):
+        track=fixture();pack={'format':'robot-data-viewer-force','version':1,'tracks':[track]}
+        self.assertEqual(self.call('/api/v1/cache','PUT',pack)['retention'],'persistent')
+        self.assertEqual(self.call('/api/v1/cache','POST',{'items':[identity(track)]})['tracks'],[track])
+        self.assertIsNone(self.app.active)
+        track['model']['pipeline']='unvalidated'
+        with self.assertRaises(urllib.error.HTTPError):self.call('/api/v1/cache','PUT',pack)
+        self.assertNotIn('onnxruntime',sys.modules)
+    def test_backend_choice_is_per_job_and_rejects_arbitrary_providers(self):
+        for provider in ('auto','cpu','gpu'):
+            job=self.call('/api/v1/jobs','POST',{'items':[identity(fixture())],'provider':provider})['id']
+            self.assertEqual(self.app.jobs[job]['provider'],provider)
+            self.call('/api/v1/jobs/'+job,'DELETE')
+        with self.assertRaises(urllib.error.HTTPError):
+            self.call('/api/v1/jobs','POST',{'items':[identity(fixture())],'provider':'untrusted-provider'})
+    def test_save_failure_returns_complete_playable_track_with_explicit_unsaved_status(self):
+        import io
+        from unittest.mock import Mock,patch
+        track=fixture();job=self.app.create([identity(track)])
+        (job['directory']/'0.json').write_text(json.dumps(track))
+        job['process']=Mock(stdout=io.StringIO(json.dumps({'complete':0,'diagnostics':{}})+'\n'))
+        job['process'].wait.return_value=0
+        with patch.object(self.app.cache,'put',side_effect=OSError('disk full')):
+            self.app.monitor(job)
+        state=self.call('/api/v1/jobs/'+job['id'])
+        self.assertEqual(state['state'],'complete')
+        self.assertEqual(state['tracks'],[track]);self.assertEqual(state['savedSensors'],[])
+        self.assertIn(track['sensor'],state['storageErrors'])
         self.assertIsNone(self.app.active)
     def test_cancellation_when_worker_exits_during_enumeration(self):
         import psutil

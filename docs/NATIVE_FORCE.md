@@ -19,7 +19,7 @@ frames of the selected episode. Completion leaves playback paused. Estimates
 remain independent of heatmap gain, masks and gamma. No frame skipping,
 quantization or lower-resolution neural inference is used.
 
-The native launcher keeps completed results in a 256 MiB disk LRU, in addition
+The development launcher keeps completed results until explicit removal, in addition
 to the viewer's 32 MiB memory cache. Only compact force tracks are retained;
 uploaded videos and partial results are removed. Matching includes the video
 SHA-256, sensor, dimensions, frame count, timestamps, reference and model versions.
@@ -27,10 +27,22 @@ Existing version-1 `.rdv-force.json` files still import/export unchanged.
 Use **Remove saved results for this episode** or **Clear all saved force results**
 to delete them. Deletion switches force off and does not recalculate.
 
-Cache locations:
-- Linux: `$XDG_CACHE_HOME/RobotDataViewer/force-v1`, default `~/.cache/...`.
-- Windows: `%LOCALAPPDATA%/RobotDataViewer/force-v1`.
-- macOS: `~/Library/Caches/RobotDataViewer/force-v1`.
+Development result locations:
+- Linux: `$XDG_DATA_HOME/RobotDataViewer/force-prepared-v1`, default `~/.local/share/...`.
+- Windows: `%LOCALAPPDATA%/RobotDataViewer/force-prepared-v1`.
+- macOS: `~/Library/Application Support/RobotDataViewer/force-prepared-v1`.
+
+Published 1.4/1.5 launchers retain the former 256 MiB LRU under `force-v1`
+(Linux `~/.cache`, Windows `%LOCALAPPDATA%`, macOS `~/Library/Caches`).
+At its default storage location, the development launcher copies valid legacy
+tracks once, leaving the old files intact. Explicit `--storage` directories
+do not migrate implicitly. Removing new results never restores them from legacy
+storage on subsequent launches. The UI distinguishes saved and unsaved results;
+a full or unavailable disk does not discard already calculated values.
+
+The HTML viewer now saves tracks to IndexedDB on the current browser origin.
+Browsers can remove this storage; export `.rdv-force.json` for portable retention.
+Native launches use the filesystem library across changing localhost ports.
 
 Use **Save preparation diagnostics** after calculation to save backend and timing details.
 If the helper fails, **Retry with browser calculation** retains the slower HTML fallback.
@@ -43,8 +55,9 @@ directories are cleaned at the next launch. Do not share the launch URL/token.
 
 ## Acceleration and diagnostics
 
-One model session processes sensors in order. Up to two preprocessing tasks
-prepare frames ahead; at most three frames are queued. Inference uses up to eight
+One model session processes sensors in order. CPU mode uses up to two preprocessing
+tasks; GPU mode uses up to four, within the physical-core budget. The bounded
+queue holds at most one more frame than the preprocessing thread count. Inference uses up to eight
 threads within the physical-core budget (reserving CPU for preprocessing/decode).
 OpenCV and FFmpeg each use one thread. Exact processed-image matches reuse prior
 estimates, including the model's **nonzero** reference-frame estimate.
@@ -52,8 +65,10 @@ estimates, including the model's **nonzero** reference-frame estimate.
 CPU and each candidate GPU provider run all eight bundled synthetic probes.
 Original decoded-recording oracles are validated separately and are never packaged.
 Candidates must retain contact decisions and meet `0.001 N + 0.1%` force tolerance,
-and be faster than CPU. Jobs whose measured CPU estimate is below five seconds
-avoid GPU startup overhead. Otherwise CPU is selected with a diagnostic reason.
+and be faster than CPU. In **Automatic** mode, jobs whose measured CPU estimate is
+below five seconds avoid GPU startup overhead. **Prefer GPU** tests an available
+GPU even for short jobs; it still falls back if validation fails or inference is
+slower. **CPU** skips GPU initialization. CPU fallback includes a diagnostic reason.
 Windows uses DirectML; macOS can use CoreML; Linux/Windows can use the separate
 NVIDIA add-on. CUDA TF32 and CoreML low-precision accumulation are disabled.
 Install the matching NVIDIA add-on as `nvidia/` beside the base executable.

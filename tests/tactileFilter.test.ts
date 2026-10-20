@@ -22,7 +22,9 @@ test('NumPy/OpenCV goldens match grayscale, median, percentile, Gaussian borders
     for(let p=0;p<baseline.noiseFloor.length;p++)assert.equal(baseline.noiseFloor[p],view.getFloat32(p*4,true));
     const current=bytes(f.current),copy=current.slice();
     assert.deepEqual([...tactileGray(current)],[...bytes(f.gray)]);
-    const filter=new TactileFilter(allowAll(baseline)),output=new Uint8ClampedArray(current.length);
+    // Keep checking the original numerical stages independently of the new
+    // connected-component cleanup; its acceptance cases are below.
+    const filter=new TactileFilter(allowAll(baseline),{spatialCleanup:false}),output=new Uint8ClampedArray(current.length);
     for(const r of f.renders){
       filter.render(current,output,r.gain,r.cleanup);
       const expected=bytes(r.output);
@@ -85,4 +87,41 @@ test('grayscale calibration and rendering match RGBA exactly without changing in
   const filter=new TactileFilter(a),out=new Uint8ClampedArray(w*h*4),expected=new Uint8ClampedArray(out.length);
   const rgba=frames[3],gray=tactileGray(rgba),original=gray.slice();
   for(const gain of [1,10,16])for(const cleanup of [true,false]){filter.render(rgba,expected,gain,cleanup);filter.renderGray(gray,out,gain,cleanup);assert.deepEqual(out,expected);assert.deepEqual(gray,original);}
+});
+
+test('isolated hot pixels are black before blur while weak held contact survives arbitrary seeks',()=>{
+  const w=64,h=48,baseline=model(w,h),filter=new TactileFilter(baseline),out=frame(w,h);
+  const noise=frame(w,h);
+  const set=(a:Uint8ClampedArray,x:number,y:number,v:number)=>{for(let c=0;c<3;c++)a[(y*w+x)*4+c]=v;};
+  set(noise,12,12,200);set(noise,40,30,180);set(noise,41,30,180);
+  for(const gain of [1,10,16]){filter.render(noise,out,gain);assert.ok(isBlack(out));}
+  filter.render(noise,out,10,false);assert.ok(!isBlack(out));
+  const touch=noise.slice();
+  for(let y=20;y<24;y++)for(let x=22;x<26;x++)set(touch,x,y,110);
+  const original=touch.slice();
+  filter.render(touch,out,10);assert.ok(!isBlack(out));const held=out.slice();
+  for(let i=0;i<20;i++){
+    filter.render(noise,out,16);assert.ok(isBlack(out));
+    filter.render(touch,out,10);assert.deepEqual(out,held);
+  }
+  assert.deepEqual(touch,original);
+});
+
+test('opening unloaded period ends before a sustained early touch contaminates the reference',()=>{
+  const w=64,h=48,c=new TactileCalibration(w,h),touch=frame(w,h);
+  for(let y=16;y<32;y++)for(let x=16;x<32;x++)for(let ch=0;ch<3;ch++)touch[(y*w+x)*4+ch]=125;
+  for(let i=0;i<16;i++)c.add(frame(w,h,100+(i%3)-1));
+  for(let i=16;i<60;i++)c.add(touch);
+  const baseline=allowAll(c.finish());
+  assert.equal(baseline.candidateCount,60);assert.equal(baseline.sampleCount,16);
+  const filter=new TactileFilter(baseline),out=frame(w,h);
+  filter.render(frame(w,h,101),out);assert.ok(isBlack(out));
+  filter.render(touch,out);assert.ok(!isBlack(out));
+});
+
+test('opening-period noise and a single transient do not shorten an unloaded reference',()=>{
+  const w=64,h=48,c=new TactileCalibration(w,h);
+  for(let i=0;i<60;i++)c.add(frame(w,h,i===30?120:100+(i%5)-2));
+  const baseline=c.finish();
+  assert.equal(baseline.sampleCount,60);
 });
