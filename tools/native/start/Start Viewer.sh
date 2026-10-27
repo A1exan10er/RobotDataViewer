@@ -2,23 +2,24 @@
 # Resolve the package location, never the caller's working directory.
 cd -- "$(dirname -- "$0")" || exit 1
 
-# File managers may launch scripts without a terminal. Show a window so the
-# local URL, startup errors and Ctrl+C shutdown remain available.
+# The executable provides its own desktop window. --console is retained for
+# existing terminal callers and never spawns another terminal.
 if [ "${1-}" = '--console' ]; then
     shift
-elif [ "$#" -eq 0 ] && ! [ -t 0 ]; then
-    for terminal in x-terminal-emulator gnome-terminal konsole xterm; do
-        if command -v "$terminal" >/dev/null 2>&1; then
-            if [ "$terminal" = 'gnome-terminal' ]; then
-                exec "$terminal" -- /bin/sh "$PWD/$(basename -- "$0")" --console
-            fi
-            exec "$terminal" -e /bin/sh "$PWD/$(basename -- "$0")" --console
-        fi
-    done
+    set -- --headless "$@"
 fi
+viewer_headless=false
+for argument in "$@"; do
+    case "$argument" in --headless|--no-browser) viewer_headless=true ;; esac
+done
 
 fail() {
     printf '%s\n' "$1" 'Extract the complete package, then try again.' '请完整解压软件包后重试。'
+    if ! [ -t 0 ] && [ "$viewer_headless" = false ]; then
+        if command -v zenity >/dev/null 2>&1; then zenity --error --text="$1" 2>/dev/null || true
+        elif command -v osascript >/dev/null 2>&1; then osascript -e 'display alert "Robot Data Viewer: package is incomplete. Extract the complete ZIP. / 请完整解压 ZIP。"' 2>/dev/null || true
+        fi
+    fi
     if [ -t 0 ]; then
         printf '%s\n' 'Press Enter to close / 按回车关闭'
         read -r unused

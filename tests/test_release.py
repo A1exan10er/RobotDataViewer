@@ -29,6 +29,9 @@ class ReleaseTests(unittest.TestCase):
             meta['platform'] = platform
             system = platform.split('-')[0]; ext = '.exe' if system == 'windows' else ''
             files.update({n: b'test' for n in [ENTRY_POINTS[system], 'RobotDataViewer' + ext, '_internal/runtime', 'licenses/license', 'model/force.onnx', 'model/model.json', 'ffmpeg/ffmpeg' + ext, 'ffmpeg/ffprobe' + ext]})
+            if self.version.startswith('1.6.'):
+                meta['desktopLauncher']=1
+                files.update({'licenses/Tcl.txt':b'license','licenses/Tk.txt':b'license'})
         files['BUILD.json'] = json.dumps(meta).encode()
         path = directory / (f'RobotDataViewer-{self.version}-{platform}.zip' if platform else 'RobotDataViewer.zip')
         with zipfile.ZipFile(path, 'w') as archive:
@@ -39,7 +42,7 @@ class ReleaseTests(unittest.TestCase):
 
     def reports(self, directory, platform, path):
         sha = sha256(path.read_bytes()).hexdigest()
-        for kind in ('startup', 'cameras'):
+        for kind in ('startup', 'cameras', 'lifecycle'):
             (directory / f'native-{kind}-{platform}.json').write_text(json.dumps({'passed': True, 'archiveSha256': sha}))
         for n in (1, 2):
             (directory / f'native-smoke-{platform}-{n}.json').write_text(json.dumps({'cachedTracks': n - 1, 'archiveSha256': sha}))
@@ -73,6 +76,15 @@ class ReleaseTests(unittest.TestCase):
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, 'uncommitted'): inspect_archive(self.package(root, dirty=True), self.version)
             with self.assertRaisesRegex(ValueError, 'not executable'): inspect_archive(self.package(root, 'linux-x64', executable=False), self.version, 'linux-x64')
+
+    def test_development_release_requires_lifecycle_evidence(self):
+        self.version='1.6.0-dev.2'
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            path=self.package(root,'linux-x64');self.reports(root,'linux-x64',path)
+            (root/'native-lifecycle-linux-x64.json').unlink()
+            with self.assertRaisesRegex(ValueError,'lifecycle report'):
+                assemble(root,root,root/'stage',self.version)
 
     def test_publication_verifies_downloads_and_restores_replaced_asset_on_failure(self):
         class Host:

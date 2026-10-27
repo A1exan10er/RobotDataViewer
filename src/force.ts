@@ -6,6 +6,7 @@ import type { RecordingSource } from './source';
 import type { Episode, EpisodeData, Media, Timing } from './types';
 import type { Playback } from './playback';
 import { nativeForce, nativeIdentity, type NativeItem, type StorageUsage, type ForceBackend } from './nativeForce';
+import { reportPreparation } from './serviceLifecycle';
 import { BrowserForceStore, savedForceKey } from './forceStore';
 import { playbackMark } from './playbackMetrics';
 
@@ -87,7 +88,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
     if(parsed.some(t=>t.model.weightsSha256!==manifest.weightsSha256))throw new Error('forceInvalidFile');
     parsed.filter(t=>!wanted||wanted(t)).forEach(t=>cache.put(t));
   }
-  function cancel(){++serial;abort.abort();runner?.dispose();runner=undefined;preparing.value=false;progress.value=null;playback.setExternalHold(false);}
+  function cancel(){++serial;abort.abort();runner?.dispose();runner=undefined;if(preparing.value)void reportPreparation(false).catch(()=>{});preparing.value=false;progress.value=null;playback.setExternalHold(false);}
   async function prepare(){
     cancel();tracks.value={};errors.value={};notice.value='';diagnostics.value=null;reused.value=0;saved.value=0;storageWarning.value='';backend.value='';backendReason.value='';
     if(!enabled.value||!source.value||!episode.value||!data.value)return;
@@ -99,6 +100,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
     const result:Record<string,ForceTrack>={},failures:Record<string,string>={},saveAttempts=new Set<string>();
     playbackMark('force-preparation-start',selected.id);
     try{
+      await reportPreparation(true);signal.throwIfAborted();
       const missing:NativeItem[]=[];
       for(const media of sensors){
         signal.throwIfAborted();progress.value={sensor:media.id,frame:0,frames:timings[media.id].media.length,stage:'checking'};
@@ -220,7 +222,7 @@ export function useForce(source:Ref<RecordingSource|null>,episode:Ref<Episode|nu
         notice.value=error instanceof Error&&error.message==='forceRuntimeMissing'?'forceRuntimeMissing':'forceCalculationFailed';
         sensors.forEach(m=>{if(!result[m.id])failures[m.id]=notice.value;});tracks.value=result;errors.value=failures;
       }
-    }finally{if(current===serial){saved.value=Object.values(result).filter(track=>retained.has(savedForceKey(track))).length;runner?.dispose();runner=undefined;preparing.value=false;progress.value=null;playback.setExternalHold(false);}}
+    }finally{if(current===serial){saved.value=Object.values(result).filter(track=>retained.has(savedForceKey(track))).length;runner?.dispose();runner=undefined;preparing.value=false;void reportPreparation(false).catch(()=>{});progress.value=null;playback.setExternalHold(false);}}
   }
   watch(source,()=>{cancel();cache.clear();externalFiles.clear();retained.clear();hashes=new WeakMap();enabled.value=false;tracks.value={};errors.value={};reused.value=saved.value=0;storageWarning.value='';backend.value='';backendReason.value='';browserFallback=false;},{flush:'sync'});
   watch([enabled,episode],()=>{void prepare();},{flush:'post'});

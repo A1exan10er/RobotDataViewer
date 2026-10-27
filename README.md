@@ -11,11 +11,21 @@ experimental acceptance limits. It is a source snapshot, not a renamed or rebuil
 installer. Further force, tactile, calibration and device-model work is isolated
 on `codex/force-tactile-calibration`; see the [investigation and implementation plan](docs/DEVELOPMENT_PLAN_ZH.md).
 
-**Development build — 1.6.0-dev.1:** automatic saved-force reuse in both the
+**Development build — 1.6.0-dev.2:** automatic saved-force reuse in both the
 native launcher and HTML viewer, selectable compute backend, faster CUDA frame
 preparation, and opening-period tactile noise cleanup. See
 [development usage and validation](docs/DEVELOPMENT_BUILD_ZH.md).
+This development version adds a visible desktop launcher with service status,
+Open Viewer, and Stop & Exit. Closing the launcher stops the service; closing
+browser tabs alone does not. Repeat launches reuse the same installation.
+Active force preparation asks for confirmation; completed saved results remain.
 The downloads below remain the previous published versions.
+
+After building the native package, the runnable folder is
+`dist/RobotDataViewer-1.6.0-dev.2-<platform>/`, beside its ZIP. On Linux,
+open `RobotDataViewer` inside that folder. `npm run build` alone creates the
+HTML application; follow [native build instructions](docs/NATIVE_FORCE.md)
+to produce the executable. Keep the entire native folder together.
 
 **Download for live cameras:** choose the native portable ZIP for your computer from the repaired [GitHub v1.5.0-rc.3 release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea v1.5.0-rc.3 release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): Linux x64, Windows x64, macOS Intel (`macos-x64`), or Apple Silicon (`macos-arm64`). All four packages and their checksums were downloaded again and verified after publication.
 

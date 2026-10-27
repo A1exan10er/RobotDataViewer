@@ -8,6 +8,11 @@ if not exist "viewer.html" goto incomplete
 if not exist "force-runtime.js" goto incomplete
 if not exist "model\model.json" goto incomplete
 if not exist "model\force.onnx" goto incomplete
+if "%~1"=="" (
+  start "" "%CD%\RobotDataViewer.exe"
+  popd
+  exit /b 0
+)
 "%CD%\RobotDataViewer.exe" %*
 set "viewer_exit=%ERRORLEVEL%"
 popd

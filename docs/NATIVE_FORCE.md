@@ -8,8 +8,26 @@ The start files locate the bundled runtime beside them, so the whole folder can
 be moved or renamed without editing paths or installing a shortcut. On Linux,
 enable **Allow executing file as program** in file properties if required. The underlying
 `RobotDataViewer` executable (`.exe` on Windows) remains available.
-Keep the launcher open while viewing; close the browser tab and press Ctrl+C
-in the launcher when finished.
+In 1.6.0-dev.2, a small desktop window shows the service status and version.
+Use **Open Viewer** or **Copy launch address** to reopen the browser, and
+**Stop & Exit** or the window close button to stop the service. Minimizing the
+window keeps the service running. Closing browser tabs alone does not stop it.
+The browser also shows local service status and Stop & Exit when opened using
+the authenticated launch address. Port-only tabs show status without exit controls.
+
+Reopening the same installation restores its launcher and reuses its service.
+Different installation directories, versions, or explicit storage configurations
+can run independently. Exit asks before cancelling active native or authenticated
+browser force preparation. Completed saved results are retained. Other open tabs
+release playback, cameras, and workers when their next status check detects the
+shutdown or lost connection; suspended browser tabs do this when they resume.
+An interrupted browser calculation may conservatively leave an exit confirmation
+pending if the browser crashes before reporting completion.
+
+For terminal/CI use, pass `--headless`; Ctrl+C stops the service. `--no-browser`
+also selects headless mode for compatibility. Headless launches are independent
+and do not take the desktop instance lock. Published 1.4/1.5 launchers keep the
+older terminal-only lifecycle.
 It opens a random **127.0.0.1** port in your browser. Python, OpenCV, ONNX Runtime
 and a minimal FFmpeg decoder are bundled. No installation or network is needed.
 The HTML-only package remains available; it calculates forces in the browser.
@@ -104,6 +122,16 @@ python tools/release.py
 python tools/native/build-ffmpeg.py
 python tools/native/build.py
 ```
+
+The native build leaves a runnable versioned folder beside its ZIP in `dist/`.
+For Linux dev.2, open `dist/RobotDataViewer-1.6.0-dev.2-linux-x64/RobotDataViewer`.
+A later frontend rebuild clears `dist`; rebuild the native package afterward.
+Tcl/Tk must be installed for the build Python (for example `python3-tk`/`tk` on
+Linux); PyInstaller bundles it for recipients. Windows uses console hiding rather
+than a no-console executable so force-worker progress pipes and headless use work.
+The four-platform workflow verifies extracted startup, GUI lifecycle, synthetic
+browser cameras, cross-tab shutdown, force calculation and saved-result reuse.
+Only packages with matching successful reports qualify for release staging.
 
 If rebuilding from the package's source archive, first restore binary build
 inputs with `python tools/force/unpack-runtime.py /path/to/force-runtime.js`.

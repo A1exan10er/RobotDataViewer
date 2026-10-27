@@ -11,6 +11,13 @@
   --surface:#151b23
 }
 
+.service-bar { display:flex; align-items:center; gap:14px; padding:8px 24px; flex-wrap:wrap; border-bottom:1px solid var(--line); background:#18222c; }
+.service-bar > span:first-child { display:flex; align-items:center; gap:8px; }
+.service-bar i { width:7px; height:7px; border-radius:50%; background:#55cbbb; }
+.service-bar .button { margin-left:auto; }
+.service-ended { max-width:760px; margin:12vh auto; padding:28px; display:grid; gap:22px; }
+.service-ended p { color:var(--muted); line-height:1.7; }
+
 * {
   box-sizing:border-box
 }

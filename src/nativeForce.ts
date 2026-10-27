@@ -3,19 +3,10 @@ import manifest from '../vendor/force/model.json';
 import { parseForceTracks, serializeForceTracks, type ForceProgress, type ForceTrack } from './forceTracks';
 import type { ForceStorageUsage } from './forceStore';
 import type { Media, Timing } from './types';
+import { nativeToken as token } from './nativeSession';
 export type NativeItem={media:Media;blob:Blob;sha:string;timing:Timing};
 export type StorageUsage=ForceStorageUsage;
 export type ForceBackend='auto'|'cpu'|'gpu';
-const local=location.protocol==='http:'&&location.hostname==='127.0.0.1';
-const fragment=new URLSearchParams(location.hash.slice(1));
-let token=local?fragment.get('native'):null;
-if(local){
-  try{
-    if(token)sessionStorage.setItem('rdv-native-token',token);
-    else token=sessionStorage.getItem('rdv-native-token');
-  }catch{/* A private browser may disable storage; the launch token still works in memory. */}
-  if(fragment.has('native'))history.replaceState(null,'',location.pathname+location.search);
-}
 export function nativeIdentity(item:NativeItem){
   return {sensor:item.media.id,video:{sha256:item.sha,bytes:item.blob.size,frames:item.timing.media.length,width:item.media.width,height:item.media.height},
     model:{id:manifest.model,weightsSha256:manifest.weightsSha256,pipeline:manifest.pipeline},reference:{frame:0 as const,time:item.timing.media[0]},time:Array.from(item.timing.media)};

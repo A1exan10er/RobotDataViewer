@@ -129,13 +129,25 @@ def main():
                     subprocess.run(['node', str(Path(__file__).resolve().parents[1] / 'browser-camera-release.mjs'),
                         '--url', url, '--file', str(base / 'viewer.html'), '--output', str(args.camera_output.resolve()),
                         '--archive-sha256', archive_sha256], check=True)
+                # Exercise repeat desktop launch while the original keeps its port.
+                repeated = subprocess.run(command, shell=system == 'windows', cwd=root, env=environment,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                assert repeated.returncode == 0, repeated.stdout.decode(errors='replace')
+                assert process.poll() is None
+                report['checks'].append('Repeated desktop launch reuses the original service')
+                shutdown = urllib.request.Request(origin + '/api/v1/service/shutdown', data=b'{}',
+                    headers={'Authorization': 'Bearer ' + parse_qs(parts.fragment)['native'][0], 'Origin': origin})
+                assert json.load(urllib.request.urlopen(shutdown, timeout=10))['state'] == 'stopping'
+                process.wait(timeout=15)
+                assert process.returncode == 0
+                report['checks'].append('Browser shutdown exits the desktop launcher cleanly')
             finally:
                 stop(process)
         assert not list((root / 'cache').glob('temporary/launch-*')), 'Launch resources were not released'
         report['checks'].append('Launcher shutdown releases its temporary resources')
         # A copied start file must fail clearly rather than opening stale web content.
         executable.rename(executable.with_suffix('.missing'))
-        result = subprocess.run(command, shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+        result = subprocess.run(command+['--headless'], shell=system == 'windows', cwd=root, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
         assert result.returncode != 0 and b'package is incomplete' in result.stdout
         report['checks'].append('Incomplete extraction reports an actionable error')
     report['archiveSha256'] = archive_sha256

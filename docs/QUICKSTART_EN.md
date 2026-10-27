@@ -1,5 +1,15 @@
 # Robot Data Viewer
 
+## Development launcher (1.6.0-dev.2)
+
+New development packages show a desktop control window. Use **Open Viewer** to
+reopen the browser; **Copy launch address** includes the credentials needed for
+browser exit controls. **Stop & Exit**, or closing the launcher, stops the service.
+Closing browser tabs alone does not. Repeat launches reuse the running installation.
+Active force preparation asks for confirmation; completed saved results remain.
+The versioned runnable folder and ZIP are produced together in `dist/` by the
+native build. The published rc.3 instructions below describe the older release.
+
 For recordings and live USB cameras, choose an attached desktop ZIP for your operating system from the [GitHub release](https://github.com/A1exan10er/RobotDataViewer/releases/tag/v1.5.0-rc.3) or [Gitea release](https://git.neoteai.com/yangtianyu/RobotDataViewer/releases/tag/v1.5.0-rc.3): `windows-x64`, `linux-x64`, `macos-x64` (Intel), or `macos-arm64` (Apple Silicon). Desktop packages include their runtime; recipients need only a desktop browser. No Python, Node.js, installation, server configuration, or internet connection is required after downloading. All four desktop packages are attached on both hosts and were downloaded again with matching checksums. This remains a pre-release; see the release validation notes.
 
 1. **Extract the entire ZIP** to a folder on your computer.

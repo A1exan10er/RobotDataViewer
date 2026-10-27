@@ -54,6 +54,9 @@ jobs:
         with: {node-version: '22'}
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
+      - name: Install desktop test display and Tcl/Tk
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth tk
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
         with:
@@ -80,7 +83,17 @@ jobs:
       - name: Extract and check the portable Start Viewer entry point
         env:
           ROBOT_VIEWER_CHROME: ${{ steps.chrome.outputs.chrome-path }}
-        run: python tools/native/check-startup.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-startup-${{ matrix.label }}.json --camera-output artifacts/native-cameras-${{ matrix.label }}.json
+        run: |
+          runner=()
+          if [ "$RUNNER_OS" = Linux ]; then runner=(xvfb-run -a); fi
+          "${runner[@]}" python tools/native/check-startup.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-startup-${{ matrix.label }}.json --camera-output artifacts/native-cameras-${{ matrix.label }}.json
+      - name: Verify desktop and browser shutdown lifecycle
+        env:
+          ROBOT_VIEWER_CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          runner=()
+          if [ "$RUNNER_OS" = Linux ]; then runner=(xvfb-run -a); fi
+          "${runner[@]}" python tools/native/check-lifecycle.py "dist/RobotDataViewer-$(node -p 'require("./package.json").version')-${{ matrix.label }}.zip" --output artifacts/native-lifecycle-${{ matrix.label }}.json
       - run: python tools/native/ci-smoke.py ${{ matrix.label }}
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
@@ -101,6 +114,7 @@ jobs:
             artifacts/native-smoke-*.json
             artifacts/native-startup-*.json
             artifacts/native-cameras-*.json
+            artifacts/native-lifecycle-*.json
   release-set:
     needs: portable
     runs-on: ubuntu-22.04

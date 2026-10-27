@@ -53,6 +53,9 @@ def inspect_archive(path, version, platform=None):
         require(metadata.get('dirty') is False, f'{path}: uncommitted build cannot be released')
         if platform:
             require(metadata.get('platform') == platform, f'{path}: platform mismatch')
+            if tuple(map(int,version.split('.')[:2])) >= (1,6):
+                require(metadata.get('desktopLauncher') == 1, f'{path}: missing desktop launcher')
+                require(all(base+'licenses/'+name+'.txt' in names for name in ('Tcl','Tk')), f'{path}: missing Tcl/Tk notices')
         viewer = archive.read(base + 'viewer.html')
         require(hashlib.sha256(viewer).hexdigest() == metadata['viewerSha256'], f'{path}: viewer checksum mismatch')
         require(f'name="application-version" content="{version}"'.encode() in viewer, f'{path}: stale viewer')
@@ -80,7 +83,8 @@ def assemble(directory, reports, output, version):
         require(metadata == common and package_source == source, f'{name}: mixed source or viewer builds')
         sha = digest(path)
         if platform:
-            for kind in ('startup', 'cameras'):
+            kinds=('startup','cameras','lifecycle') if tuple(map(int,version.split('.')[:2])) >= (1,6) else ('startup','cameras')
+            for kind in kinds:
                 candidates = list(reports.rglob(f'native-{kind}-{platform}.json'))
                 require(len(candidates) == 1, f'{name}: missing or ambiguous {kind} report')
                 result = json.loads(candidates[0].read_text())
@@ -129,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--reports', type=Path)
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--version', default='1.5.0-rc.3')
+    parser.add_argument('--version', default=json.loads((Path(__file__).resolve().parents[1]/'package.json').read_text())['version'])
     args = parser.parse_args()
     if args.output:
         parser.error('--reports is required with --output') if not args.reports else None

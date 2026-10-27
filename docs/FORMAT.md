@@ -120,3 +120,27 @@ use a separate 32 MiB LRU, cleared on source replacement. Calculation uses raw
 images independently of tactile median baselines and masks. The display samples
 the frame actually painted, never the nearest future sample. The three-second
 ordinary startup target excludes explicitly requested full force preparation.
+
+
+## Native service lifecycle (1.6.0-dev.2)
+
+`GET /api/v1/service` exposes only application identity, lifecycle protocol `1`,
+and `running`/`stopping` state. It requires the exact loopback Host and accepts
+only absent or same-origin Origin, but needs no bearer token. It reveals no
+paths, authentication, PID, or preparation activity. Browser tabs poll every two
+seconds and dispose their viewer resources when service availability is lost.
+
+Control requests require the existing bearer token and same-origin Origin:
+
+- `POST /api/v1/service/activate` with `{}` queues window restoration/browser opening.
+- `POST /api/v1/service/session` with `{id, preparing}` records authenticated browser
+  calculation activity; `DELETE` with `{id}` unregisters it. Active records are
+  retained until cleared so crashed browsers cause a conservative exit prompt.
+- `POST /api/v1/service/shutdown` with `{}` returns `409` when preparation is active;
+  an explicitly confirmed `{cancelActive: true}` permits cancellation. Success
+  returns `{state: "stopping"}`. New work is rejected after shutdown is accepted.
+
+Capabilities advertise `serviceControl: 1`. Launch credentials remain in session
+storage/in memory, are removed from the URL fragment, and are never included in
+public status. HTML-only viewing does not start a service. CLI `--headless` and
+legacy `--no-browser` preserve terminal output and independent instance behavior.

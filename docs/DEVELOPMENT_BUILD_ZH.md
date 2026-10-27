@@ -1,8 +1,24 @@
-# 1.6.0-dev.1：力数据复用、GPU 与触觉去噪
+# 1.6.0-dev.2：桌面启动器、退出控制与力数据复用
 
 开发分支为 `codex/force-tactile-calibration`。稳定分支
 `codex/stable-recordings` 与标签 `stable-recordings-2026-10-20`
 继续指向 `f7dc623`，已发布安装包没有替换。标定和硬件模型展示等待补充资料。
+
+## 桌面启动与退出
+
+本版双击原生可执行文件会显示带任务栏入口的启动窗口：服务状态、版本、
+“打开查看器”“复制启动地址”和“停止并退出”。关闭此窗口即可停止服务；
+最小化和仅关闭浏览器标签页不会停止服务。重复打开同一安装目录会复用已有服务。
+正在计算力数据时退出会先请求确认，已保存的完整结果保留。
+浏览器通过启动器完整网址打开时也有“停止并退出”；只输入端口可查看状态。
+服务停止或断连后，打开的页面在下一次状态检查时释放相机、播放和计算资源。
+
+`npm run build` 只生成 HTML。执行原生构建后，Linux 可执行文件位于
+`dist/RobotDataViewer-1.6.0-dev.2-linux-x64/RobotDataViewer`，与 ZIP 一起生成。
+请保留完整目录，不要从旧版本复制单个可执行文件。原生构建步骤见
+[NATIVE_FORCE.md](NATIVE_FORCE.md)。Windows、macOS Intel 和 Apple Silicon
+使用同一工作流构建，须以各平台实际验证报告为准。
+命令行使用 `--headless` 或 `--no-browser`，仍可按 Ctrl+C 退出。
 
 ## 使用
 

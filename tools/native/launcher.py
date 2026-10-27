@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import secrets
 import signal
+import socket
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,8 @@ class Application:
             try:self.cache.migrate_from(cache_home()/'tracks')
             except OSError:self.migration_pending=True
         self.jobs={};self.lock=threading.RLock();self.active=None
+        self.stop_event=threading.Event();self.activate_event=threading.Event()
+        self.sessions={};self.closed=False;self.close_lock=threading.Lock()
         self.work=Path(storage)/'temporary';self.work.mkdir(parents=True,exist_ok=True)
         # Only our marked abandoned launch directories. Never scan user recordings.
         for p in self.work.glob('launch-*'):
@@ -60,8 +63,33 @@ class Application:
             except PermissionError:pass
         self.temp=Path(tempfile.mkdtemp(prefix='launch-',dir=self.work));(self.temp/'owner').write_text(str(os.getpid()))
     def close(self):
-        for job in list(self.jobs.values()):self.cancel(job)
-        shutil.rmtree(self.temp,ignore_errors=True)
+        with self.close_lock:
+            if self.closed:return
+            self.stop_event.set()
+            for job in list(self.jobs.values()):self.cancel(job)
+            shutil.rmtree(self.temp,ignore_errors=True)
+            self.closed=True
+    def service_state(self):
+        with self.lock:
+            preparing=bool(self.active or any(self.sessions.values()))
+            return {'application':'RobotDataViewer','protocol':1,
+                    'state':'stopping' if self.stop_event.is_set() else 'running','preparing':preparing}
+    def session(self,name,preparing):
+        if not isinstance(name,str) or not 16<=len(name)<=64 or not all(c.isalnum() or c=='-' for c in name):
+            raise ValueError('Invalid session')
+        if preparing is not None and type(preparing)!=bool:raise ValueError('Invalid activity')
+        with self.lock:
+            if self.stop_event.is_set():raise ValueError('Service is stopping')
+            # Keep only active calculations. If a browser crashes mid-calculation,
+            # conservatively ask before shutdown rather than silently losing work.
+            if preparing:self.sessions[name]=True
+            else:self.sessions.pop(name,None)
+    def request_stop(self,confirm=False):
+        with self.lock:
+            if self.stop_event.is_set():return True
+            if self.service_state()['preparing'] and not confirm:return False
+            self.stop_event.set()
+            return True
     def check(self,item):
         if item['sensor'] not in SENSORS:raise ValueError('Invalid sensor')
         if item['model']!={'id':self.manifest['model'],'weightsSha256':self.manifest['weightsSha256'],'pipeline':self.manifest['pipeline']}:raise ValueError('Model mismatch')
@@ -79,6 +107,7 @@ class Application:
         if not 0<len(items)<=4:raise ValueError('Select one to four tactile videos')
         for item in items:self.check(item)
         with self.lock:
+            if self.stop_event.is_set():raise ValueError('Service is stopping')
             if self.active is not None:raise ValueError('Another force job is active')
             for old in list(self.jobs):self.cancel(self.jobs[old]);del self.jobs[old]
             name=secrets.token_hex(16);directory=self.temp/name;directory.mkdir()
@@ -91,22 +120,34 @@ class Application:
     def cancel(self,job):
         with job['lock']:
             job['cancelled']=True;process=job['process']
+            children=[]
             if process and process.poll() is None:
                 import psutil
                 try:
-                    for child in psutil.Process(process.pid).children(recursive=True):
+                    children=psutil.Process(process.pid).children(recursive=True)
+                    for child in children:
                         try:child.terminate()
                         except psutil.Error:pass
                 except psutil.Error:pass  # The worker may exit between poll and enumeration.
-                process.terminate()
+                try:process.terminate()
+                except ProcessLookupError:pass
         if process:
             try:process.wait(timeout=3)
             except subprocess.TimeoutExpired:process.kill();process.wait()
+        if children:
+            _,alive=psutil.wait_procs(children,timeout=2)
+            for child in alive:
+                try:child.kill()
+                except psutil.Error:pass
+            psutil.wait_procs(alive,timeout=2)
+        monitor=job.get('monitor')
+        if monitor and monitor is not threading.current_thread():monitor.join(timeout=5)
         with job['lock']:
             job['state']='cancelled';shutil.rmtree(job['directory'],ignore_errors=True)
             if self.active==job['id']:self.active=None
     def start(self,job):
-        with job['lock']:
+        with self.lock,job['lock']:
+            if self.stop_event.is_set():raise ValueError('Service is stopping')
             if job['cancelled'] or job['state']!='uploading' or any(n!=item['video']['bytes'] for n,item in zip(job['offsets'],job['items'])):raise ValueError('Uploads are incomplete')
             addon=ROOT/'nvidia'/('RobotDataViewerEngine.exe' if os.name=='nt' else 'RobotDataViewerEngine')
             args=[str(addon) if FROZEN and addon.is_file() and job['provider']!='cpu' else sys.executable]
@@ -115,9 +156,12 @@ class Application:
             provider='CUDAExecutionProvider' if FROZEN and addon.is_file() and job['provider']=='gpu' else job['provider']
             args+=['--worker',str(job['directory']),'--model',str(self.model),'--provider',provider]
             with (job['directory']/'error.log').open('wb') as error_log:
-                job['process']=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=error_log,text=True,env={**os.environ,'RDV_FORCE_PARENT_PID':str(os.getpid())})
+                job['process']=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=error_log,text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0,
+                    env={**os.environ,'RDV_FORCE_PARENT_PID':str(os.getpid())})
             job['state']='calculating'
-        threading.Thread(target=self.monitor,args=(job,),daemon=True).start()
+            job['monitor']=threading.Thread(target=self.monitor,args=(job,),daemon=True)
+            job['monitor'].start()
     def watchdog(self,job):
         while job['state'] in ('uploading','calculating'):
             time.sleep(1)
@@ -158,6 +202,9 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
     def log_message(self,*args):pass  # Never log launch authentication or recording metadata.
     def setup(self):super().setup();self.connection.settimeout(30)
+    def handle(self):
+        try:super().handle()
+        except (ConnectionError,TimeoutError,OSError):pass  # Shutdown closes in-flight uploads and keep-alive sockets.
     @property
     def app(self):return self.server.app
     def reply(self,status,value,content_type='application/json'):
@@ -182,14 +229,30 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):self.dispatch()
     def dispatch(self):
         path=urlsplit(self.path).path;api=path.startswith('/api/')
-        if not self.authorized(api):self.reply(403,{'error':'Local authentication required'});self.close_connection=True;return
+        public_status=path=='/api/v1/service' and self.command=='GET'
+        if not self.authorized(api and not public_status):self.reply(403,{'error':'Local authentication required'});self.close_connection=True;return
         try:
+            if public_status:
+                # No token, paths, PID, recordings, or activity details in the public health response.
+                state=self.app.service_state();state.pop('preparing')
+                self.reply(200,state);return
+            if path=='/api/v1/service/shutdown' and self.command=='POST':
+                body=self.body();confirmed=body.get('cancelActive',False)
+                if type(confirmed)!=bool:raise ValueError('Invalid shutdown confirmation')
+                if not self.app.request_stop(confirmed):self.reply(409,{'error':'preparation-active'});return
+                self.reply(200,{'state':'stopping'});return
+            if self.app.stop_event.is_set():self.reply(503,{'error':'Service is stopping'});return
+            if path=='/api/v1/service/activate' and self.command=='POST':
+                self.body();self.app.activate_event.set();self.reply(200,{'activated':True});return
+            if path=='/api/v1/service/session' and self.command in ('POST','DELETE'):
+                body=self.body();self.app.session(body['id'],body.get('preparing') if self.command=='POST' else None)
+                self.reply(200,{'registered':True});return
             if not api:
                 name={'/':'viewer.html','/viewer.html':'viewer.html','/force-runtime.js':'force-runtime.js'}.get(path)
                 if self.command!='GET' or not name:self.reply(404,{'error':'Not found'});return
                 self.reply(200,(self.app.web/name).read_bytes(),'text/html; charset=utf-8' if name.endswith('html') else 'text/javascript');return
             if path=='/api/v1/capabilities' and self.command=='GET':
-                self.reply(200,{'version':1,'native':True,'storage':self.app.cache.usage(),'model':self.app.manifest,'migrationPending':self.app.migration_pending});return
+                self.reply(200,{'version':1,'native':True,'serviceControl':1,'storage':self.app.cache.usage(),'model':self.app.manifest,'migrationPending':self.app.migration_pending});return
             if path=='/api/v1/cache' and self.command=='PUT':
                 pack=self.body()
                 if pack.get('format')!='robot-data-viewer-force' or pack.get('version')!=1:raise ValueError('Invalid force file')
@@ -241,25 +304,115 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection=True;self.reply(400,{'error':str(error)})
 
 
+class ServiceServer(ThreadingHTTPServer):
+    daemon_threads=True
+    def __init__(self,app):
+        self.clients=set();self.clients_lock=threading.Lock()
+        super().__init__(('127.0.0.1',0),Handler)
+        self.app=app
+    def get_request(self):
+        client,address=super().get_request()
+        with self.clients_lock:self.clients.add(client)
+        return client,address
+    def close_request(self,request):
+        with self.clients_lock:self.clients.discard(request)
+        super().close_request(request)
+    def disconnect_clients(self):
+        with self.clients_lock:clients=list(self.clients)
+        for client in clients:
+            try:client.shutdown(socket.SHUT_RDWR)
+            except OSError:pass
+            client.close()
+
+
+class Service:
+    def __init__(self,app):
+        self.app=app;self.server=ServiceServer(app);self.done=threading.Event()
+        self.origin=f'http://127.0.0.1:{self.server.server_port}'
+        self.url=self.origin+'/#native='+app.token
+        self.thread=threading.Thread(target=self.serve,name='viewer-http',daemon=True)
+        self.thread.start()
+        self.cleaner=threading.Thread(target=self.cleanup,name='viewer-shutdown',daemon=True)
+        self.cleaner.start()
+    def serve(self):
+        try:self.server.serve_forever(poll_interval=.1)
+        finally:self.app.stop_event.set()
+    def cleanup(self):
+        self.app.stop_event.wait()
+        # Let the authenticated shutdown response reach the initiating browser.
+        time.sleep(.15)
+        try:
+            self.server.shutdown()
+            self.server.disconnect_clients()
+            self.server.server_close()
+            self.app.close()
+            self.thread.join(timeout=2)
+        finally:self.done.set()
+    def close(self):
+        self.app.request_stop(confirm=True)
+        self.cleaner.join()
+
+
+def version():
+    source=ROOT/'BUILD.json' if FROZEN else ROOT/'package.json'
+    return json.loads(source.read_text())['version']
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--web',type=Path,default=ROOT if FROZEN else ROOT/'dist');parser.add_argument('--model',type=Path,default=ROOT/'model' if FROZEN else ROOT/'vendor/force')
     parser.add_argument('--storage',type=Path,default=results_home());parser.add_argument('--no-browser',action='store_true');parser.add_argument('--worker',type=Path)
+    parser.add_argument('--headless',action='store_true',help='Run in the terminal without a desktop window')
     parser.add_argument('--provider',default='auto');args=parser.parse_args()
     if args.worker:
         from worker import run
         run(args.worker,args.model,args.provider);return
     def stopped(*_):raise KeyboardInterrupt
     signal.signal(signal.SIGTERM,stopped)
+    if hasattr(signal,'SIGHUP'):signal.signal(signal.SIGHUP,stopped)
     if hasattr(signal,'SIGBREAK'):signal.signal(signal.SIGBREAK,stopped)
-    app=Application(args.web,args.model,args.storage,args.provider)
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True;server.app=app
-    atexit.register(app.close);url=f'http://127.0.0.1:{server.server_port}/#native={app.token}'
-    print(url,flush=True)
-    print('Robot Data Viewer is running. Keep this window open; press Ctrl+C to stop.',flush=True)
-    if not args.no_browser and not webbrowser.open(url):
-        print('Open the local URL above in Chrome, Edge or Firefox.',flush=True)
-    try:server.serve_forever(poll_interval=.25)
+    headless=args.headless or args.no_browser
+    desktop=service=app=instance=None
+    try:
+        if not headless:
+            from desktop import Desktop
+            desktop=Desktop(version())
+            desktop.root.update()
+            from instance import Instance
+            instance=Instance(results_home().parent/'runtime',{
+                'root':str(ROOT.resolve()),'version':version(),'web':str(args.web.resolve()),
+                'model':str(args.model.resolve()),'storage':str(args.storage.resolve())})
+            if not instance.claim_or_activate():return
+        for path in (args.web/'viewer.html',args.web/'force-runtime.js',args.model/'model.json',args.model/'force.onnx'):
+            if not path.is_file():raise ValueError('The package is incomplete. Extract the complete package. / 请完整解压软件包。\n'+str(path))
+        app=Application(args.web,args.model,args.storage,args.provider)
+        atexit.register(app.close)
+        service=Service(app)
+        if instance:instance.publish(service.server.server_port,app.token)
+        print(service.url,flush=True)
+        print('Robot Data Viewer is running. Stop & Exit closes the service; Ctrl+C also stops terminal launches.',flush=True)
+        if desktop:
+            desktop.attach(service)
+            desktop.root.after(0,desktop.open)
+            desktop.run()
+        else:
+            if not args.no_browser and not webbrowser.open(service.url):print('Open the local URL above in your browser.',flush=True)
+            while not service.done.wait(.1):
+                if app.activate_event.is_set():app.activate_event.clear();webbrowser.open(service.url)
     except KeyboardInterrupt:pass
-    finally:server.server_close();app.close()
+    except Exception as error:
+        if desktop:desktop.error(error)
+        else:
+            print('Robot Data Viewer could not start: '+str(error),file=sys.stderr,flush=True)
+            # Never run an invisible service if Tk or the display cannot initialize.
+            if not headless and os.name=='nt':
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None,str(error),'Robot Data Viewer',0x10)
+        return 1
+    finally:
+        if service:service.close()
+        elif app:app.close()
+        if app:atexit.unregister(app.close)
+        if instance:instance.close()
+        if desktop:desktop.close()
 
-if __name__=='__main__':main()
+if __name__=='__main__':sys.exit(main())
