@@ -6,7 +6,8 @@ export type ServiceState = 'checking' | 'standalone' | 'running' | 'stopping' | 
 export const serviceState = ref<ServiceState>(localServiceCandidate ? 'checking' : 'standalone');
 export const serviceError = ref(false);
 export const servicePreparing = ref(false);
-const sessionId = crypto.randomUUID();
+// Standalone/insecure HTTP viewing must not require secure-context UUID APIs.
+const sessionId = nativeToken ? crypto.randomUUID() : '';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let stopped = false;
 let activityQueue = Promise.resolve();

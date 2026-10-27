@@ -76,7 +76,7 @@ try{
     await p.wait("!!document.querySelector('[data-status=streaming] video')?.videoWidth");
     await p.evaluate("window.__track=document.querySelector('[data-status=streaming] video').srcObject.getVideoTracks()[0]");
   }
-  const file=await page(pathToFileURL(values.file).href);
+  const file=await page(pathToFileURL(values.file).href,"Object.defineProperty(crypto,'randomUUID',{value:undefined})");
   assert.equal(await file.evaluate("!!document.querySelector('.service-bar')"),false);
   const force=await page(values.url,fakeForce);
   const {root}=await force.send('DOM.getDocument');
@@ -98,7 +98,7 @@ try{
   assert.equal(await file.evaluate("!!document.querySelector('.mode-switch') && !document.querySelector('.service-ended')"),true);
   checks.push('Active browser force preparation requires confirmation; declining preserves work, accepting terminates its worker');
   checks.push('Other authenticated and port-only tabs release real camera tracks after service shutdown');
-  checks.push('HTML-only viewing remains usable and has no service controls');
+  checks.push('HTML-only viewing remains usable without secure-context UUID APIs and has no service controls');
   assert.deepEqual(errors,[]);passed=true;
 }finally{
   await mkdir(dirname(values.output),{recursive:true});

@@ -114,6 +114,20 @@ class LifecycleTests(unittest.TestCase):
 
 
 class InstanceTests(unittest.TestCase):
+    def test_simultaneous_processes_have_exactly_one_owner(self):
+        with tempfile.TemporaryDirectory() as folder:
+            code = "import sys; sys.path.insert(0,sys.argv[1]); from instance import Instance; i=Instance(sys.argv[2],{'root':'concurrent'}); print(i.acquire(),flush=True); sys.stdin.readline(); i.close()"
+            processes = [subprocess.Popen([sys.executable,'-c',code,str(ROOT/'tools/native'),folder],
+                stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in range(4)]
+            try:
+                results = [process.stdout.readline().strip() for process in processes]
+                self.assertEqual(results.count('True'),1,results)
+                self.assertEqual(results.count('False'),3,results)
+            finally:
+                for process in processes:
+                    _,error=process.communicate('\n',timeout=5)
+                    self.assertEqual(process.returncode,0,error)
+
     def test_one_owner_stale_record_recovery_and_separate_installations(self):
         with tempfile.TemporaryDirectory() as folder:
             first, second = Instance(folder, {'root': 'one'}), Instance(folder, {'root': 'one'})
